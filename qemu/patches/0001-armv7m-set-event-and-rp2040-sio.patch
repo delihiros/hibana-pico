@@ -1,0 +1,58 @@
+diff --git a/hw/arm/armv7m.c b/hw/arm/armv7m.c
+index a29eab6..f7451d7 100644
+--- a/hw/arm/armv7m.c
++++ b/hw/arm/armv7m.c
+@@ -601,6 +601,16 @@ static void armv7m_reset(void *opaque)
+     cpu_reset(CPU(cpu));
+ }
+ 
++void armv7m_set_event(ARMv7MState *cpu)
++{
++    if (!cpu || !cpu->cpu) {
++        return;
++    }
++
++    cpu->cpu->env.event_register = true;
++    qemu_cpu_kick(CPU(cpu->cpu));
++}
++
+ void armv7m_load_kernel(ARMCPU *cpu, const char *kernel_filename,
+                         hwaddr mem_base, int mem_size)
+ {
+diff --git a/hw/misc/Kconfig b/hw/misc/Kconfig
+index f4d4924..080585e 100644
+--- a/hw/misc/Kconfig
++++ b/hw/misc/Kconfig
+@@ -49,6 +49,9 @@ config INTEGRATOR_DEBUG
+ config A9SCU
+     bool
+ 
++config RP2040_SIO
++    bool
++
+ config ARM11SCU
+     bool
+ 
+diff --git a/hw/misc/meson.build b/hw/misc/meson.build
+index 092f70b..11cc1f2 100644
+--- a/hw/misc/meson.build
++++ b/hw/misc/meson.build
+@@ -147,6 +147,7 @@ system_ss.add(when: 'CONFIG_ASPEED_SOC', if_true: files(
+ 
+ system_ss.add(when: 'CONFIG_MSF2', if_true: files('msf2-sysreg.c'))
+ system_ss.add(when: 'CONFIG_NRF51_SOC', if_true: files('nrf51_rng.c'))
++system_ss.add(when: 'CONFIG_RP2040_SIO', if_true: files('rp2040_sio.c'))
+ 
+ system_ss.add(when: 'CONFIG_GRLIB', if_true: files('grlib_ahb_apb_pnp.c'))
+ 
+diff --git a/include/hw/arm/armv7m.h b/include/hw/arm/armv7m.h
+index 98ad08d..0addeec 100644
+--- a/include/hw/arm/armv7m.h
++++ b/include/hw/arm/armv7m.h
+@@ -110,4 +110,6 @@ struct ARMv7MState {
+     bool dsp;
+ };
+ 
++void armv7m_set_event(ARMv7MState *cpu);
++
+ #endif
