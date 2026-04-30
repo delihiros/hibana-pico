@@ -6,3 +6,19 @@
 .vscode
 .DS_Store
 *.pdf
+*.uf2
+*.elf
+*.map
+
+# QEMU configure scratch files when configure is accidentally run from here.
+/config.log
+/config-temp/
+
+# Local-only CYW43439 firmware artifacts. Users must fetch these from Pico SDK /
+# cyw43-driver under the upstream Raspberry Pi firmware license.
+/firmware/cyw43/*.bin
+/firmware/cyw43/*.manifest.json
+/firmware/cyw43/*.disasm*.txt
+/firmware/cyw43/LICENSE.RP
+/firmware/cyw43/pico-sdk/
+/target/cyw43/

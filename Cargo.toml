@@ -5,4 +5,257 @@ edition = "2024"
 publish = false
 
 [dependencies]
-hibana = { path = "../hibana", default-features = false }
+hibana = { version = "0.2.0", default-features = false }
+rp2040-boot2 = "0.3.0"
+
+[features]
+default = []
+
+# Profile bundles. These are Cargo features, not protocol authority.
+profile-rp2040-baker-min = [
+    "platform-rp2040",
+    "machine-sio",
+    "machine-timer",
+    "machine-gpio",
+    "machine-uart",
+    "wasm-engine-core",
+    "wasip1-sys-fd-write",
+    "wasip1-sys-poll-oneoff",
+    "wasip1-sys-proc-exit",
+    "wasip1-ctrl-common",
+    "wasip1-ledger-pico-min",
+    "kernel-memory-lease",
+    "kernel-fd-view",
+    "kernel-interrupt-resolver",
+    "kernel-budget",
+]
+profile-pico2w-swarm-min = [
+    "platform-rp2350",
+    "machine-sio",
+    "machine-timer",
+    "machine-gpio",
+    "machine-uart",
+    "machine-cyw43439",
+    "machine-cyw43439-real-gspi",
+    "wasm-engine-core",
+    "wasip1-sys-fd-write",
+    "wasip1-sys-clock-time-get",
+    "wasip1-sys-poll-oneoff",
+    "wasip1-sys-proc-exit",
+    "wasip1-ctrl-common",
+    "wasip1-ledger-pico-min",
+    "swarm-frame",
+    "swarm-remote-fd",
+    "swarm-datagram-fd",
+]
+profile-host-qemu-swarm = [
+    "platform-host-qemu",
+    "machine-cyw43439",
+    "machine-cyw43439-qemu-model",
+    "wasm-engine-core",
+    "wasip1-sys-fd-write",
+    "wasip1-sys-clock-time-get",
+    "wasip1-sys-poll-oneoff",
+    "wasip1-sys-proc-exit",
+    "wasip1-ctrl-common",
+    "wasip1-ledger-embedded-std",
+    "swarm-frame",
+    "swarm-remote-fd",
+    "swarm-datagram-fd",
+    "swarm-management",
+    "measure-size",
+    "measure-latency",
+]
+profile-host-linux-wasip1-full = [
+    "platform-host-linux",
+    "wasm-engine-wasip1-full",
+    "wasip1-sys-full",
+    "wasip1-ctrl-common",
+    "wasip1-ledger-host-full",
+    "measure-size",
+    "measure-latency",
+]
+
+# Platform and machine implementation capacity.
+platform-rp2040 = []
+platform-rp2350 = []
+platform-host-qemu = []
+platform-host-linux = []
+machine-sio = []
+machine-timer = []
+machine-gpio = []
+machine-uart = []
+machine-cyw43439 = []
+machine-cyw43439-qemu-model = ["machine-cyw43439"]
+machine-cyw43439-real-gspi = ["machine-cyw43439"]
+
+# Wasm engine implementation capacity. These features select core Wasm
+# execution coverage only; WASI P1 syscalls are selected by wasip1-sys-*.
+wasm-engine-none = []
+wasm-engine-tiny = []
+wasm-engine-core = ["wasm-engine-tiny"]
+wasm-engine-wasip1-std-profile = ["wasm-engine-core"]
+wasm-engine-wasip1-full = ["wasm-engine-wasip1-std-profile"]
+
+# WASI P1 syscall handler implementation capacity.
+wasip1-sys-full = [
+    "wasip1-sys-args-env",
+    "wasip1-sys-fd-write",
+    "wasip1-sys-fd-read",
+    "wasip1-sys-fd-fdstat-get",
+    "wasip1-sys-fd-close",
+    "wasip1-sys-clock-res-get",
+    "wasip1-sys-clock-time-get",
+    "wasip1-sys-poll-oneoff",
+    "wasip1-sys-random-get",
+    "wasip1-sys-proc-exit",
+    "wasip1-sys-proc-raise",
+    "wasip1-sys-sched-yield",
+    "wasip1-sys-path-full",
+    "wasip1-sys-sock",
+]
+wasip1-sys-args-env = []
+wasip1-sys-fd-write = []
+wasip1-sys-fd-read = []
+wasip1-sys-fd-fdstat-get = []
+wasip1-sys-fd-close = []
+wasip1-sys-clock-res-get = []
+wasip1-sys-clock-time-get = []
+wasip1-sys-poll-oneoff = []
+wasip1-sys-random-get = []
+wasip1-sys-proc-exit = []
+wasip1-sys-proc-raise = []
+wasip1-sys-sched-yield = []
+wasip1-sys-path-minimal = []
+wasip1-sys-path-full = ["wasip1-sys-path-minimal"]
+wasip1-sys-sock = []
+
+# Common WASI P1 safety substrate. Profiles that claim to run WASI P1 apps
+# select this in addition to syscall handlers.
+wasip1-ctrl-common = [
+    "wasip1-ctrl-fd-view",
+    "wasip1-ctrl-memory-lease",
+    "wasip1-ctrl-errno",
+    "wasip1-ctrl-import-validation",
+    "wasip1-ctrl-unsupported-reject",
+    "wasip1-ctrl-memory-grow-fence",
+]
+wasip1-ctrl-fd-view = []
+wasip1-ctrl-memory-lease = []
+wasip1-ctrl-errno = []
+wasip1-ctrl-import-validation = []
+wasip1-ctrl-unsupported-reject = []
+wasip1-ctrl-memory-grow-fence = []
+
+# WASI P1 guest ledger implementation capacity.
+wasip1-ledger-pico-min = [
+    "wasip1-ledger-pending-syscall",
+    "wasip1-ledger-quota",
+]
+wasip1-ledger-embedded-std = [
+    "wasip1-ledger-pico-min",
+    "wasip1-ledger-large-io-lease",
+    "wasip1-ledger-directory-cursor",
+]
+wasip1-ledger-host-full = [
+    "wasip1-ledger-embedded-std",
+]
+wasip1-ledger-pending-syscall = []
+wasip1-ledger-large-io-lease = []
+wasip1-ledger-directory-cursor = []
+wasip1-ledger-quota = []
+
+# Kernel service implementation capacity.
+kernel-memory-lease = []
+kernel-fd-view = []
+kernel-interrupt-resolver = []
+kernel-budget = []
+kernel-management = []
+kernel-hotswap = []
+
+# Swarm implementation capacity.
+swarm-frame = []
+swarm-remote-fd = []
+swarm-datagram-fd = []
+swarm-stream-fd = []
+swarm-management = []
+swarm-security-auth-tag = []
+swarm-replay-window = []
+
+# Measurement/debug implementation capacity.
+measure-size = []
+measure-latency = []
+uart-log = []
+probe-debug = []
+
+# Demo artifact selection. These select guest artifacts only.
+embed-wasip1-artifacts = []
+baker-bad-order-demo = []
+baker-chaser-demo = []
+baker-ordinary-std-demo = []
+baker-invalid-fd-demo = []
+baker-bad-payload-demo = []
+
+[[bin]]
+name = "hibana-pico-demo"
+path = "src/projects/rp2040_ping/main.rs"
+
+[[bin]]
+name = "hibana-pico-engine-demo"
+path = "src/projects/rp2040_engine/main.rs"
+
+[[bin]]
+name = "hibana-pico-wasm-demo"
+path = "src/projects/rp2040_wasm/main.rs"
+
+[[bin]]
+name = "hibana-pico-wasm-route-demo"
+path = "src/projects/rp2040_wasm_route/main.rs"
+
+[[bin]]
+name = "hibana-pico-wasm-route-bad-demo"
+path = "src/projects/rp2040_wasm_route_bad/main.rs"
+
+[[bin]]
+name = "hibana-pico-baker-led-demo"
+path = "src/projects/baker_link_led/main.rs"
+
+[[bin]]
+name = "hibana-pico-baker-led-probe"
+path = "src/projects/baker_link_led_probe/main.rs"
+
+[[bin]]
+name = "hibana-pico2w-swarm-demo"
+path = "src/projects/pico2w_swarm/demo.rs"
+
+[[bin]]
+name = "hibana-pico2w-swarm-coordinator"
+path = "src/projects/pico2w_swarm/coordinator.rs"
+
+[[bin]]
+name = "hibana-pico2w-swarm-sensor"
+path = "src/projects/pico2w_swarm/sensor.rs"
+
+[[bin]]
+name = "hibana-pico2w-swarm-coordinator-6"
+path = "src/projects/pico2w_swarm/coordinator_6.rs"
+
+[[bin]]
+name = "hibana-pico2w-swarm-sensor-2"
+path = "src/projects/pico2w_swarm/sensor_2.rs"
+
+[[bin]]
+name = "hibana-pico2w-swarm-sensor-3"
+path = "src/projects/pico2w_swarm/sensor_3.rs"
+
+[[bin]]
+name = "hibana-pico2w-swarm-sensor-4"
+path = "src/projects/pico2w_swarm/sensor_4.rs"
+
+[[bin]]
+name = "hibana-pico2w-swarm-sensor-5"
+path = "src/projects/pico2w_swarm/sensor_5.rs"
+
+[[bin]]
+name = "hibana-pico2w-swarm-sensor-6"
+path = "src/projects/pico2w_swarm/sensor_6.rs"

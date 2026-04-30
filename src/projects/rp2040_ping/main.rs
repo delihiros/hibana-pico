@@ -12,22 +12,27 @@ use core::{
 #[cfg(all(target_arch = "arm", target_os = "none"))]
 use hibana::{
     Endpoint, g,
-    g::advanced::steps::{SendStep, SeqSteps, StepCons, StepNil},
-    g::advanced::{RoleProgram, project},
     g::{Msg, Role},
-    substrate::{AttachError, CpError, SessionId, SessionKit},
     substrate::{
+        AttachError, CpError, SessionKit,
         binding::NoBinding,
+        ids::SessionId,
+        program::{RoleProgram, project},
         runtime::{Config, CounterClock, LabelUniverse},
         tap::TapEvent,
     },
 };
 #[cfg(all(target_arch = "arm", target_os = "none"))]
 use hibana_pico::{
-    backend::Rp2040SioBackend,
-    exec::{drive, park, signal, wait_until},
-    transport::SioTransport,
+    machine::rp2040::sio::Rp2040SioBackend,
+    substrate::exec::{park, run_current_task, signal, wait_until},
+    substrate::transport::SioTransport,
 };
+
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+#[unsafe(link_section = ".boot2")]
+#[used]
+static BOOT2: [u8; 256] = rp2040_boot2::BOOT_LOADER_W25Q080;
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]
 unsafe extern "C" {
@@ -70,7 +75,7 @@ const RESULT_SUCCESS: u32 = 0x4849_4f4b;
 #[cfg(all(target_arch = "arm", target_os = "none"))]
 const RESULT_FAILURE: u32 = 0x4849_4641;
 #[cfg(all(target_arch = "arm", target_os = "none"))]
-const SLAB_BYTES: usize = 147_456;
+const SLAB_BYTES: usize = 40 * 1024;
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]
 #[derive(Clone, Copy, Debug, Default)]
@@ -82,31 +87,28 @@ impl LabelUniverse for PingPongLabelUniverse {
 }
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]
-type PingStep = StepCons<SendStep<Role<1>, Role<0>, Msg<LABEL_PING, u8>, 0>, StepNil>;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-type PongStep = StepCons<SendStep<Role<0>, Role<1>, Msg<LABEL_PONG, u8>, 0>, StepNil>;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-type ProgramSteps = SeqSteps<PingStep, PongStep>;
+macro_rules! ping_pong_program {
+    () => {
+        g::seq(
+            g::send::<Role<1>, Role<0>, Msg<LABEL_PING, u8>, 0>(),
+            g::send::<Role<0>, Role<1>, Msg<LABEL_PONG, u8>, 0>(),
+        )
+    };
+}
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]
-const PROGRAM: g::Program<ProgramSteps> = g::seq(
-    g::send::<Role<1>, Role<0>, Msg<LABEL_PING, u8>, 0>(),
-    g::send::<Role<0>, Role<1>, Msg<LABEL_PONG, u8>, 0>(),
-);
-
+static CORE0_PROGRAM: RoleProgram<0> = project(&ping_pong_program!());
 #[cfg(all(target_arch = "arm", target_os = "none"))]
-static CORE0_PROGRAM: RoleProgram<'static, 0> = project(&PROGRAM);
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-static CORE1_PROGRAM: RoleProgram<'static, 1> = project(&PROGRAM);
+static CORE1_PROGRAM: RoleProgram<1> = project(&ping_pong_program!());
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]
 type DemoTransport = SioTransport<Rp2040SioBackend>;
 #[cfg(all(target_arch = "arm", target_os = "none"))]
 type DemoKit = SessionKit<'static, DemoTransport, PingPongLabelUniverse, CounterClock, 1>;
 #[cfg(all(target_arch = "arm", target_os = "none"))]
-type DemoCore0Endpoint = Endpoint<'static, 0, DemoKit>;
+type DemoCore0Endpoint = Endpoint<'static, 0>;
 #[cfg(all(target_arch = "arm", target_os = "none"))]
-type DemoCore1Endpoint = Endpoint<'static, 1, DemoKit>;
+type DemoCore1Endpoint = Endpoint<'static, 1>;
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]
 #[unsafe(no_mangle)]
@@ -434,7 +436,7 @@ fn core0_main() -> ! {
     uart_line("[core0] init runtime");
     init_runtime_once();
     let endpoint = unsafe { shared_core0_endpoint() };
-    drive(core0_session(endpoint));
+    run_current_task(core0_session(endpoint));
     park();
 }
 
@@ -443,7 +445,7 @@ fn core1_main() -> ! {
     wait_until(|| unsafe { read_volatile(core::ptr::addr_of!(UART_READY)) } != 0);
     wait_until(|| unsafe { read_volatile(core::ptr::addr_of!(RUNTIME_READY)) } != 0);
     let endpoint = unsafe { shared_core1_endpoint() };
-    drive(core1_session(endpoint));
+    run_current_task(core1_session(endpoint));
     park();
 }
 

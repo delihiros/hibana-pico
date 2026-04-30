@@ -7,9 +7,9 @@ use core::ptr::{read_volatile, write_volatile};
 
 use hibana::substrate::transport::TransportError;
 
-pub(crate) const ROLE_CAPACITY: usize = 2;
+pub(crate) const ROLE_CAPACITY: usize = 4;
 pub(crate) const QUEUE_CAPACITY: usize = 8;
-pub(crate) const PAYLOAD_CAPACITY: usize = 32;
+pub(crate) const PAYLOAD_CAPACITY: usize = 96;
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]
 const SIO_BASE: usize = 0xD000_0000;
@@ -258,6 +258,16 @@ unsafe impl Sync for RequeueSlots {}
 static RP2040_REQUEUE_SLOTS: RequeueSlots = RequeueSlots(UnsafeCell::new([None; ROLE_CAPACITY]));
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]
+struct Rp2040LocalState(UnsafeCell<BackendState>);
+
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+unsafe impl Sync for Rp2040LocalState {}
+
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+static RP2040_LOCAL_STATE: Rp2040LocalState =
+    Rp2040LocalState(UnsafeCell::new(BackendState::new()));
+
+#[cfg(all(target_arch = "arm", target_os = "none"))]
 struct Rp2040RecvWakers(UnsafeCell<WakerState>);
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]
@@ -305,7 +315,9 @@ fn rp2040_fifo_try_read() -> Option<u32> {
     if rp2040_fifo_status() & FIFO_VLD == 0 {
         return None;
     }
-    Some(unsafe { read_volatile(SIO_FIFO_RD) })
+    let word = unsafe { read_volatile(SIO_FIFO_RD) };
+    rp2040_sev();
+    Some(word)
 }
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]
@@ -379,10 +391,33 @@ fn rp2040_requeue_put(role: u8, frame: FrameOwned) -> Result<(), BackendError> {
 }
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]
+fn rp2040_local_enqueue(role: u8, frame: FrameOwned) -> Result<(), BackendError> {
+    let state = unsafe { &mut *RP2040_LOCAL_STATE.0.get() };
+    state.push_back(role, frame)?;
+    let _ = rp2040_wake_recv(role);
+    Ok(())
+}
+
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+fn rp2040_local_dequeue(role: u8) -> Result<Option<FrameOwned>, BackendError> {
+    let state = unsafe { &mut *RP2040_LOCAL_STATE.0.get() };
+    state.pop_front(role)
+}
+
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+fn rp2040_local_peek_label(role: u8) -> Result<Option<u8>, BackendError> {
+    let state = unsafe { &*RP2040_LOCAL_STATE.0.get() };
+    state.peek_label(role)
+}
+
+#[cfg(all(target_arch = "arm", target_os = "none"))]
 fn rp2040_enqueue(role: u8, frame: FrameOwned) -> Result<(), BackendError> {
     let _ = rp2040_validate_role(role)?;
     if frame.len > PAYLOAD_CAPACITY {
         return Err(BackendError::PayloadTooLarge);
+    }
+    if role >= 2 || role == rp2040_core_id() {
+        return rp2040_local_enqueue(role, frame);
     }
     rp2040_fifo_write_blocking(rp2040_pack_header(frame));
     for chunk in frame.as_slice().chunks(4) {
@@ -395,6 +430,13 @@ fn rp2040_enqueue(role: u8, frame: FrameOwned) -> Result<(), BackendError> {
 #[cfg(all(target_arch = "arm", target_os = "none"))]
 fn rp2040_dequeue(role: u8) -> Result<Option<FrameOwned>, BackendError> {
     let _ = rp2040_validate_role(role)?;
+    if let Some(frame) = rp2040_local_dequeue(role)? {
+        let _ = rp2040_take_recv_waker(role)?;
+        return Ok(Some(frame));
+    }
+    if role >= 2 {
+        return Ok(None);
+    }
     if let Some(frame) = rp2040_requeue_take(role)? {
         let _ = rp2040_take_recv_waker(role)?;
         return Ok(Some(frame));
@@ -435,6 +477,9 @@ fn rp2040_dequeue(role: u8) -> Result<Option<FrameOwned>, BackendError> {
 #[cfg(all(target_arch = "arm", target_os = "none"))]
 fn rp2040_peek_label(role: u8) -> Result<Option<u8>, BackendError> {
     let _ = rp2040_validate_role(role)?;
+    if let Some(label) = rp2040_local_peek_label(role)? {
+        return Ok(Some(label));
+    }
     let slots = unsafe { &*RP2040_REQUEUE_SLOTS.0.get() };
     Ok(slots[role as usize].map(|frame| frame.label()))
 }

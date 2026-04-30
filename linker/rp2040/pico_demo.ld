@@ -13,7 +13,12 @@ ENTRY(Reset);
 
 SECTIONS
 {
-  .vector_table ORIGIN(FLASH) :
+  .boot2 ORIGIN(FLASH) :
+  {
+    KEEP(*(.boot2))
+  } > FLASH
+
+  .vector_table ORIGIN(FLASH) + 0x100 :
   {
     KEEP(*(.vector_table.reset_vector))
   } > FLASH
@@ -26,17 +31,23 @@ SECTIONS
 
   .data : ALIGN(4)
   {
+    __data_start = .;
     *(.data*)
+    __data_end = .;
   } > RAM AT > FLASH
+  __data_load_start = LOADADDR(.data);
 
   .bss (NOLOAD) : ALIGN(4)
   {
+    __bss_start = .;
     *(.bss*)
     *(COMMON)
+    __bss_end = .;
   } > RAM
 
   . = ALIGN(8);
   __static_ram_end = .;
 }
 
+ASSERT(SIZEOF(.boot2) == 256, "rp2040 flash image must start with a 256-byte boot2 stage")
 ASSERT(__static_ram_end <= __stack_limit, "hibana-pico static RAM exceeds the reserved 48 KiB dual-core stack budget")

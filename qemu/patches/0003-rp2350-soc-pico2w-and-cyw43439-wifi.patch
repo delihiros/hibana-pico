@@ -1,0 +1,67 @@
+diff --git a/hw/arm/Kconfig b/hw/arm/Kconfig
+index c8fa84d..fd8f165 100644
+--- a/hw/arm/Kconfig
++++ b/hw/arm/Kconfig
+@@ -231,6 +231,22 @@ config RASPBERRYPI_PICO
+     depends on TCG && ARM
+     select RP2040_SOC
+ 
++config RP2350_SOC
++    bool
++    depends on TCG && ARM
++    select ARM_V7M
++    select PL011
++    select PL022
++    select RP2040_SIO
++    select CYW43439_WIFI
++    select UNIMP
++
++config RASPBERRYPI_PICO2W
++    bool
++    default y
++    depends on TCG && ARM
++    select RP2350_SOC
++
+ config STM32VLDISCOVERY
+     bool
+     default y
+diff --git a/hw/arm/meson.build b/hw/arm/meson.build
+index 4d5ff72..40e3144 100644
+--- a/hw/arm/meson.build
++++ b/hw/arm/meson.build
+@@ -103,6 +103,9 @@ arm_common_ss.add(when: 'CONFIG_RASPI', if_true: files('bcm2838_peripherals.c'))
+ arm_common_ss.add(when: 'CONFIG_RP2040_SOC', if_true: files('rp2040.c'))
+ arm_common_ss.add(when: 'CONFIG_RASPBERRYPI_PICO',
+                    if_true: files('raspberrypi-pico.c'))
++arm_common_ss.add(when: 'CONFIG_RP2350_SOC', if_true: files('rp2350.c'))
++arm_common_ss.add(when: 'CONFIG_RASPBERRYPI_PICO2W',
++                   if_true: files('raspberrypi-pico2w.c'))
+ arm_common_ss.add(when: 'CONFIG_STRONGARM', if_true: files('strongarm.c'))
+ arm_common_ss.add(when: 'CONFIG_SX1', if_true: files('omap_sx1.c'))
+ arm_common_ss.add(when: 'CONFIG_VERSATILE', if_true: files('versatilepb.c'))
+diff --git a/hw/misc/Kconfig b/hw/misc/Kconfig
+index 080585e..51672aa 100644
+--- a/hw/misc/Kconfig
++++ b/hw/misc/Kconfig
+@@ -52,6 +52,10 @@ config A9SCU
+ config RP2040_SIO
+     bool
+ 
++config CYW43439_WIFI
++    bool
++    select SSI
++
+ config ARM11SCU
+     bool
+ 
+diff --git a/hw/misc/meson.build b/hw/misc/meson.build
+index 11cc1f2..ba1326d 100644
+--- a/hw/misc/meson.build
++++ b/hw/misc/meson.build
+@@ -148,5 +148,6 @@ system_ss.add(when: 'CONFIG_MSF2', if_true: files('msf2-sysreg.c'))
+ system_ss.add(when: 'CONFIG_NRF51_SOC', if_true: files('nrf51_rng.c'))
+ system_ss.add(when: 'CONFIG_RP2040_SIO', if_true: files('rp2040_sio.c'))
++system_ss.add(when: 'CONFIG_CYW43439_WIFI', if_true: files('cyw43439_wifi.c'))
+ 
+ system_ss.add(when: 'CONFIG_GRLIB', if_true: files('grlib_ahb_apb_pnp.c'))
+ 

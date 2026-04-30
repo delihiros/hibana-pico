@@ -1,2 +1,3 @@
 0001-armv7m-set-event-and-rp2040-sio.patch
 0002-rp2040-soc-and-raspberrypi-pico-machine.patch
+0003-rp2350-soc-pico2w-and-cyw43439-wifi.patch

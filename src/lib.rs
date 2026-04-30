@@ -4,6 +4,13 @@
 #[cfg(test)]
 extern crate std;
 
-pub mod backend;
-pub mod exec;
-pub mod transport;
+#[cfg(all(
+    not(test),
+    any(feature = "platform-host-linux", feature = "wasm-engine-wasip1-full")
+))]
+extern crate std;
+
+pub mod choreography;
+pub mod kernel;
+pub mod machine;
+pub mod substrate;
