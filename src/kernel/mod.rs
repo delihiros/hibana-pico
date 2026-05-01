@@ -3,7 +3,7 @@ pub mod budget;
 pub mod choreofs;
 pub mod device;
 pub mod engine;
-pub mod fd_resolver;
+pub mod fd_object;
 pub mod features;
 pub mod guest_ledger;
 pub mod metrics;

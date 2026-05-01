@@ -291,25 +291,37 @@ const TINY_WASIP1_BR_TABLE_CAPACITY: usize = 8;
 const WASM_BLOCKTYPE_EMPTY: u8 = 0x40;
 const CORE_WASM_MAX_TYPES: usize = if cfg!(feature = "wasm-engine-wasip1-full") {
     32
+} else if cfg!(any(test, feature = "wasm-engine-wasip1-std-profile")) {
+    20
 } else {
     16
 };
 const CORE_WASM_MAX_IMPORTS: usize = if cfg!(feature = "wasm-engine-wasip1-full") {
     64
+} else if cfg!(feature = "wasm-engine-wasip1-std-profile") {
+    16
 } else {
     16
 };
 const CORE_WASM_MAX_FUNCTIONS: usize = if cfg!(feature = "wasm-engine-wasip1-full") {
     192
+} else if cfg!(any(test, feature = "wasm-engine-wasip1-std-profile")) {
+    148
 } else {
     32
 };
 const CORE_WASM_MAX_GLOBALS: usize = if cfg!(feature = "wasm-engine-wasip1-full") {
     32
+} else if cfg!(any(test, feature = "wasm-engine-wasip1-std-profile")) {
+    4
 } else {
     16
 };
-const CORE_WASM_MAX_PARAMS: usize = if cfg!(any(test, feature = "wasm-engine-wasip1-full")) {
+const CORE_WASM_MAX_PARAMS: usize = if cfg!(any(
+    test,
+    feature = "wasm-engine-wasip1-std-profile",
+    feature = "wasm-engine-wasip1-full"
+)) {
     12
 } else if cfg!(feature = "wasip1-sys-path-minimal") {
     12
@@ -341,6 +353,8 @@ const CORE_WASM_BR_TABLE_CAPACITY: usize = 8;
 const CORE_WASIP1_PATH_CAPACITY: usize = 64;
 const CORE_WASM_TABLE_CAPACITY: usize = if cfg!(feature = "wasm-engine-wasip1-full") {
     96
+} else if cfg!(any(test, feature = "wasm-engine-wasip1-std-profile")) {
+    50
 } else {
     16
 };
@@ -1489,16 +1503,8 @@ impl<'a> Reader<'a> {
 }
 
 impl<'a> CoreWasmModule<'a> {
-    pub fn parse(bytes: &'a [u8]) -> Result<Self, WasmError> {
-        let mut reader = Reader::new(bytes);
-        if reader.read_bytes(4)? != WASM_MAGIC {
-            return Err(WasmError::Invalid("invalid wasm magic"));
-        }
-        if reader.read_bytes(4)? != WASM_VERSION {
-            return Err(WasmError::Invalid("unsupported wasm version"));
-        }
-
-        let mut module = Self {
+    const fn empty() -> Self {
+        Self {
             types: [CoreWasmFuncType::EMPTY; CORE_WASM_MAX_TYPES],
             type_count: 0,
             imports: [None; CORE_WASM_MAX_IMPORTS],
@@ -1517,7 +1523,37 @@ impl<'a> CoreWasmModule<'a> {
             start_function_index: u32::MAX,
             memory_min_pages: 0,
             memory_max_pages: 0,
-        };
+        }
+    }
+
+    pub fn parse(bytes: &'a [u8]) -> Result<Self, WasmError> {
+        let mut module = Self::empty();
+        module.parse_from(bytes)?;
+        Ok(module)
+    }
+
+    pub fn parse_in_place<'slot>(
+        bytes: &'a [u8],
+        slot: &'slot mut core::mem::MaybeUninit<Self>,
+    ) -> Result<&'slot mut Self, WasmError> {
+        let ptr = slot.as_mut_ptr();
+        unsafe {
+            ptr.write(Self::empty());
+        }
+        let module = unsafe { &mut *ptr };
+        module.parse_from(bytes)?;
+        Ok(module)
+    }
+
+    fn parse_from(&mut self, bytes: &'a [u8]) -> Result<(), WasmError> {
+        let mut reader = Reader::new(bytes);
+        if reader.read_bytes(4)? != WASM_MAGIC {
+            return Err(WasmError::Invalid("invalid wasm magic"));
+        }
+        if reader.read_bytes(4)? != WASM_VERSION {
+            return Err(WasmError::Invalid("unsupported wasm version"));
+        }
+
         let mut saw_export = false;
 
         while !reader.is_empty() {
@@ -1526,19 +1562,19 @@ impl<'a> CoreWasmModule<'a> {
             let section_bytes = reader.read_bytes(section_len)?;
             let mut section = Reader::new(section_bytes);
             match section_id {
-                SECTION_TYPE => module.parse_core_type_section(&mut section)?,
-                SECTION_IMPORT => module.parse_core_import_section(&mut section)?,
-                SECTION_FUNCTION => module.parse_core_function_section(&mut section)?,
-                SECTION_TABLE => module.parse_core_table_section(&mut section)?,
-                SECTION_MEMORY => module.parse_core_memory_section(&mut section)?,
-                SECTION_GLOBAL => module.parse_core_global_section(&mut section)?,
+                SECTION_TYPE => self.parse_core_type_section(&mut section)?,
+                SECTION_IMPORT => self.parse_core_import_section(&mut section)?,
+                SECTION_FUNCTION => self.parse_core_function_section(&mut section)?,
+                SECTION_TABLE => self.parse_core_table_section(&mut section)?,
+                SECTION_MEMORY => self.parse_core_memory_section(&mut section)?,
+                SECTION_GLOBAL => self.parse_core_global_section(&mut section)?,
                 SECTION_EXPORT => {
-                    module.parse_core_export_section(&mut section)?;
+                    self.parse_core_export_section(&mut section)?;
                     saw_export = true;
                 }
-                SECTION_ELEMENT => module.parse_core_element_section(&mut section)?,
-                SECTION_CODE => module.parse_core_code_section(&mut section)?,
-                SECTION_DATA => module.parse_core_data_section(&mut section)?,
+                SECTION_ELEMENT => self.parse_core_element_section(&mut section)?,
+                SECTION_CODE => self.parse_core_code_section(&mut section)?,
+                SECTION_DATA => self.parse_core_data_section(&mut section)?,
                 SECTION_CUSTOM => {
                     let _ = section.read_bytes(section.bytes.len().saturating_sub(section.pos))?;
                 }
@@ -1549,17 +1585,17 @@ impl<'a> CoreWasmModule<'a> {
             }
         }
 
-        if !saw_export || module.start_function_index == u32::MAX {
+        if !saw_export || self.start_function_index == u32::MAX {
             return Err(WasmError::Invalid("missing _start or __main_void export"));
         }
-        if module.function_count > 0
-            && module.code_bodies[..module.function_count]
+        if self.function_count > 0
+            && self.code_bodies[..self.function_count]
                 .iter()
                 .any(Option::is_none)
         {
             return Err(WasmError::Invalid("missing core wasm code body"));
         }
-        Ok(module)
+        Ok(())
     }
 
     pub fn instantiate(self) -> Result<CoreWasmInstance<'a>, WasmError> {
@@ -2138,6 +2174,65 @@ fn decode_core_block_type(byte: u8) -> Result<(usize, CoreWasmValueKind), WasmEr
 impl<'a> CoreWasmInstance<'a> {
     pub fn new(module: &'a [u8]) -> Result<Self, WasmError> {
         CoreWasmModule::parse(module)?.instantiate()
+    }
+
+    fn initialize_parsed_in_place<'slot>(
+        slot: &'slot mut core::mem::MaybeUninit<Self>,
+    ) -> Result<&'slot mut Self, WasmError> {
+        // The module field is parsed in place first so embedded profiles do not
+        // need a second CoreWasmModule-sized stack or static workspace.
+        let ptr = slot.as_mut_ptr();
+        let module_ptr = unsafe { core::ptr::addr_of!((*ptr).module) };
+        let memory_min_pages = unsafe { (*module_ptr).memory_min_pages };
+        if memory_min_pages > CORE_WASM_MAX_MEMORY_PAGES {
+            return Err(WasmError::Unsupported("core wasm memory too large"));
+        }
+
+        unsafe {
+            core::ptr::addr_of_mut!((*ptr).frames).write(core_wasm_frames_empty()?);
+            core::ptr::addr_of_mut!((*ptr).frame_len).write(0);
+            core::ptr::addr_of_mut!((*ptr).values)
+                .write([CoreWasmValue::I32(0); CORE_WASM_VALUE_STACK_CAPACITY]);
+            core::ptr::addr_of_mut!((*ptr).value_len).write(0);
+            core::ptr::addr_of_mut!((*ptr).globals)
+                .write([CoreWasmValue::I32(0); CORE_WASM_MAX_GLOBALS]);
+            core::ptr::addr_of_mut!((*ptr).global_kinds)
+                .write([CoreWasmValueKind::I32; CORE_WASM_MAX_GLOBALS]);
+            core::ptr::addr_of_mut!((*ptr).global_mutable).write([false; CORE_WASM_MAX_GLOBALS]);
+            core::ptr::addr_of_mut!((*ptr).global_count).write((*module_ptr).global_count);
+            write_core_wasm_memory_zeroed(core::ptr::addr_of_mut!((*ptr).memory))?;
+            core::ptr::addr_of_mut!((*ptr).memory_pages).write(memory_min_pages);
+            core::ptr::addr_of_mut!((*ptr).data_dropped)
+                .write([false; TINY_WASIP1_MAX_DATA_SEGMENTS]);
+            core::ptr::addr_of_mut!((*ptr).element_dropped)
+                .write([false; CORE_WASM_MAX_ELEMENT_SEGMENTS]);
+            core::ptr::addr_of_mut!((*ptr).table_functions).write((*module_ptr).table_functions);
+            core::ptr::addr_of_mut!((*ptr).table_size).write(
+                (*module_ptr)
+                    .table_min
+                    .max((*module_ptr).table_function_count),
+            );
+            core::ptr::addr_of_mut!((*ptr).pending).write(None);
+            core::ptr::addr_of_mut!((*ptr).done).write(false);
+        }
+
+        let instance = unsafe { &mut *ptr };
+        for (index, global) in instance
+            .module
+            .globals
+            .iter()
+            .copied()
+            .flatten()
+            .take(instance.module.global_count)
+            .enumerate()
+        {
+            instance.globals[index] = global.initial;
+            instance.global_kinds[index] = global.kind;
+            instance.global_mutable[index] = global.mutable;
+        }
+        instance.init_core_data_segments()?;
+        instance.push_frame(instance.module.start_function_index)?;
+        Ok(instance)
     }
 
     pub fn resume(&mut self) -> Result<CoreWasmTrap<'a>, WasmError> {
@@ -3896,16 +3991,17 @@ impl<'a> CoreWasip1Instance<'a> {
         handlers: Wasip1HandlerSet,
         slot: &'slot mut core::mem::MaybeUninit<Self>,
     ) -> Result<&'slot mut Self, WasmError> {
-        let core_module = CoreWasmModule::parse(module)?;
-        validate_core_wasip1_imports(&core_module, handlers)?;
-
         let ptr = slot.as_mut_ptr();
         unsafe {
+            let core_module_slot = core::ptr::addr_of_mut!((*ptr).core.module)
+                as *mut core::mem::MaybeUninit<CoreWasmModule<'a>>;
+            let core_module = CoreWasmModule::parse_in_place(module, &mut *core_module_slot)?;
+            validate_core_wasip1_imports(core_module, handlers)?;
             core::ptr::addr_of_mut!((*ptr).handlers).write(handlers);
             core::ptr::addr_of_mut!((*ptr).done).write(false);
             let core_slot = core::ptr::addr_of_mut!((*ptr).core)
                 as *mut core::mem::MaybeUninit<CoreWasmInstance<'a>>;
-            core_module.instantiate_in_place(&mut *core_slot)?;
+            CoreWasmInstance::initialize_parsed_in_place(&mut *core_slot)?;
             Ok(&mut *ptr)
         }
     }
@@ -8220,7 +8316,7 @@ mod tests {
         ));
 
         let mut guest =
-            CoreWasip1Instance::new(CORE_WASIP1_FD_WRITE_GUEST, Wasip1HandlerSet::BAKER_MIN)
+            CoreWasip1Instance::new(CORE_WASIP1_FD_WRITE_GUEST, Wasip1HandlerSet::PICO_MIN)
                 .expect("instantiate core wasip1 fd_write guest");
         let CoreWasip1Trap::FdWrite(write) = guest.resume().expect("fd_write trampoline trap")
         else {
@@ -8243,7 +8339,7 @@ mod tests {
         let mut slot = core::mem::MaybeUninit::uninit();
         let guest = CoreWasip1Instance::write_new_in_place(
             CORE_WASIP1_FD_WRITE_GUEST,
-            Wasip1HandlerSet::BAKER_MIN,
+            Wasip1HandlerSet::PICO_MIN,
             &mut slot,
         )
         .expect("instantiate core wasip1 fd_write guest in place");
@@ -8274,7 +8370,7 @@ mod tests {
                         true,
                     );
                     assert!(matches!(
-                        CoreWasip1Instance::new(&fd_read, Wasip1HandlerSet::BAKER_MIN),
+                        CoreWasip1Instance::new(&fd_read, Wasip1HandlerSet::PICO_MIN),
                         Err(WasmError::Unsupported(
                             "wasip1 fd_read disabled by feature profile"
                         ))
@@ -8348,7 +8444,7 @@ mod tests {
                         true,
                     );
                     assert!(matches!(
-                        CoreWasip1Instance::new(&fd_prestat_get, Wasip1HandlerSet::BAKER_MIN),
+                        CoreWasip1Instance::new(&fd_prestat_get, Wasip1HandlerSet::PICO_MIN),
                         Err(WasmError::Unsupported(
                             "wasip1 path-minimal disabled by feature profile"
                         ))
@@ -8435,7 +8531,7 @@ mod tests {
                         true,
                     );
                     assert!(matches!(
-                        CoreWasip1Instance::new(&fd_seek, Wasip1HandlerSet::BAKER_MIN),
+                        CoreWasip1Instance::new(&fd_seek, Wasip1HandlerSet::PICO_MIN),
                         Err(WasmError::Unsupported(
                             "wasip1 path-full disabled by feature profile"
                         ))
@@ -8478,7 +8574,7 @@ mod tests {
                         true,
                     );
                     assert!(matches!(
-                        CoreWasip1Instance::new(&fd_fdstat_set_rights, Wasip1HandlerSet::BAKER_MIN),
+                        CoreWasip1Instance::new(&fd_fdstat_set_rights, Wasip1HandlerSet::PICO_MIN),
                         Err(WasmError::Unsupported(
                             "wasip1 path-full disabled by feature profile"
                         ))
@@ -8567,7 +8663,7 @@ mod tests {
                         true,
                     );
                     assert!(matches!(
-                        CoreWasip1Instance::new(&sock_send, Wasip1HandlerSet::BAKER_MIN),
+                        CoreWasip1Instance::new(&sock_send, Wasip1HandlerSet::PICO_MIN),
                         Err(WasmError::Unsupported(
                             "wasip1 NetworkObject imports disabled by feature profile"
                         ))
@@ -8732,7 +8828,7 @@ mod tests {
                         true,
                     );
                     assert!(matches!(
-                        CoreWasip1Instance::new(&clock_res, Wasip1HandlerSet::BAKER_MIN),
+                        CoreWasip1Instance::new(&clock_res, Wasip1HandlerSet::PICO_MIN),
                         Err(WasmError::Unsupported(
                             "wasip1 clock_res_get disabled by feature profile"
                         ))
@@ -8822,7 +8918,7 @@ mod tests {
                         false,
                     );
                     assert!(matches!(
-                        CoreWasip1Instance::new(&sched_yield, Wasip1HandlerSet::BAKER_MIN),
+                        CoreWasip1Instance::new(&sched_yield, Wasip1HandlerSet::PICO_MIN),
                         Err(WasmError::Unsupported(
                             "wasip1 sched_yield disabled by feature profile"
                         ))
@@ -8849,7 +8945,7 @@ mod tests {
                         false,
                     );
                     assert!(matches!(
-                        CoreWasip1Instance::new(&proc_raise, Wasip1HandlerSet::BAKER_MIN),
+                        CoreWasip1Instance::new(&proc_raise, Wasip1HandlerSet::PICO_MIN),
                         Err(WasmError::Unsupported(
                             "wasip1 proc_raise disabled by feature profile"
                         ))
@@ -9303,7 +9399,7 @@ mod tests {
             0x00, 0x01, 0x0a, 0x08, 0x01, 0x06, 0x00, 0x41, 0x07, 0x10, 0x00, 0x0b,
         ];
         let mut guest =
-            CoreWasip1Instance::new(CORE_WASIP1_PROC_EXIT_GUEST, Wasip1HandlerSet::BAKER_MIN)
+            CoreWasip1Instance::new(CORE_WASIP1_PROC_EXIT_GUEST, Wasip1HandlerSet::PICO_MIN)
                 .expect("instantiate core wasip1 proc_exit guest");
 
         assert_eq!(

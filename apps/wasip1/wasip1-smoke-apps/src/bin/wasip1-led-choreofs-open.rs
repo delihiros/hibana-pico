@@ -1,19 +1,11 @@
 use std::hint::black_box;
 
-const STEP_BYTES: usize = 6;
-const STEP_COUNT: usize = 7;
+const PREOPEN_FD: u32 = 9;
+const FD_WRITE_RIGHT: u64 = 1 << 6;
 const ERRNO_SUCCESS: u16 = 0;
 const EVENTTYPE_CLOCK: u8 = 0;
 const SUBSCRIPTION_EVENTTYPE_OFFSET: usize = 8;
 const SUBSCRIPTION_CLOCK_TIMEOUT_OFFSET: usize = 24;
-
-const TRAFFIC_PLAN: &[u8] = b"\x03\x31\xfa\x00\x00\x00\
-\x04\x31\x32\x00\x00\x00\
-\x05\x31\x32\x00\x00\x00\
-\x04\x31\x32\x00\x00\x00\
-\x03\x31\x32\x00\x00\x00\
-\x04\x31\x32\x00\x00\x00\
-\x05\x31\xfa\x00\x00\x00";
 
 #[repr(C)]
 struct Ciovec {
@@ -23,6 +15,17 @@ struct Ciovec {
 
 #[link(wasm_import_module = "wasi_snapshot_preview1")]
 unsafe extern "C" {
+    fn path_open(
+        fd: u32,
+        dirflags: u32,
+        path: *const u8,
+        path_len: usize,
+        oflags: u32,
+        fs_rights_base: u64,
+        fs_rights_inheriting: u64,
+        fdflags: u32,
+        opened_fd: *mut u32,
+    ) -> u16;
     fn fd_write(fd: u32, iovs: *const Ciovec, iovs_len: usize, nwritten: *mut usize) -> u16;
     fn poll_oneoff(
         input: *const u8,
@@ -33,21 +36,44 @@ unsafe extern "C" {
 }
 
 fn main() {
-    black_box(TRAFFIC_PLAN);
+    let green = open_led(b"/device/led/green");
+    let orange = open_led(b"/device/led/orange");
+    let red = open_led(b"/device/led/red");
 
-    for index in 0..STEP_COUNT {
-        let offset = index * STEP_BYTES;
-        let fd = TRAFFIC_PLAN[offset] as u32;
-        let payload = TRAFFIC_PLAN[offset + 1];
-        let delay_ms = u32::from_le_bytes([
-            TRAFFIC_PLAN[offset + 2],
-            TRAFFIC_PLAN[offset + 3],
-            TRAFFIC_PLAN[offset + 4],
-            TRAFFIC_PLAN[offset + 5],
-        ]);
+    let plan = [
+        (green, b'1', 180),
+        (orange, b'1', 40),
+        (orange, b'0', 40),
+        (orange, b'1', 40),
+        (orange, b'0', 40),
+        (orange, b'1', 40),
+        (red, b'1', 180),
+    ];
+    black_box(plan);
+
+    for (fd, payload, delay_ms) in plan {
         write_led(fd, payload);
         sleep_ms(delay_ms);
     }
+}
+
+fn open_led(path: &[u8]) -> u32 {
+    let mut fd = 0u32;
+    let errno = unsafe {
+        path_open(
+            PREOPEN_FD,
+            0,
+            path.as_ptr(),
+            path.len(),
+            0,
+            FD_WRITE_RIGHT,
+            0,
+            0,
+            &mut fd,
+        )
+    };
+    assert_eq!(errno, ERRNO_SUCCESS);
+    fd
 }
 
 fn write_led(fd: u32, payload: u8) {

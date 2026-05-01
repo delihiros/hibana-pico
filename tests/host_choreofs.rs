@@ -13,7 +13,7 @@ use hibana_pico::{
     },
 };
 
-type TestLedger = GuestLedger<8, 4, 4>;
+type TestLedger = GuestLedger<16, 4, 4>;
 type TestStore = ChoreoFsStore<8, 64, 64>;
 
 fn ledger() -> TestLedger {
@@ -21,7 +21,7 @@ fn ledger() -> TestLedger {
         WasiProfile::HostFull,
         4096,
         1,
-        GuestQuotaLimits::new(8, 4),
+        GuestQuotaLimits::new(16, 4),
         WasiErrnoMap::new(),
     )
 }
@@ -171,6 +171,157 @@ fn choreofs_gpio_device_object_mints_gpio_fd_without_data_path() {
     let mut out = [0u8; 4];
     assert_eq!(store.read(fd, 0, &mut out), Err(ChoreoFsError::WrongFdKind));
     assert_eq!(store.write(fd, 0, b"1"), Err(ChoreoFsError::WrongFdKind));
+}
+
+#[test]
+fn choreofs_plan_object_vocabulary_mints_resource_fds_without_data_authority() {
+    let mut store = TestStore::new();
+    store
+        .install_timer_device(b"device/timer0")
+        .expect("install timer object");
+    store
+        .install_uart_device(b"device/uart0")
+        .expect("install uart object");
+    store
+        .install_network_datagram(b"net/datagram0")
+        .expect("install datagram object");
+    store
+        .install_network_stream(b"net/stream0")
+        .expect("install stream object");
+    store
+        .install_network_listener(b"net/listener0")
+        .expect("install listener object");
+    store
+        .install_remote_object(b"remote/sensor0")
+        .expect("install remote object");
+    store
+        .install_management_object(b"mgmt/update")
+        .expect("install management object");
+    store
+        .install_telemetry_object(b"telemetry/log")
+        .expect("install telemetry object");
+
+    let mut ledger = ledger();
+    store
+        .grant_preopen_root(&mut ledger, 3)
+        .expect("grant preopen root");
+
+    let timer = store
+        .open_wasip1_path_with_ledger(&mut ledger, 3, 4, b"device/timer0", WASIP1_RIGHT_FD_READ)
+        .expect("open timer");
+    assert_eq!(timer.kind(), GuestFdKind::Timer);
+
+    let uart = store
+        .open_wasip1_path_with_ledger(&mut ledger, 3, 5, b"device/uart0", WASIP1_RIGHT_FD_WRITE)
+        .expect("open uart");
+    assert_eq!(uart.kind(), GuestFdKind::Uart);
+
+    let datagram = store
+        .open_wasip1_path_with_ledger(
+            &mut ledger,
+            3,
+            6,
+            b"net/datagram0",
+            WASIP1_RIGHT_FD_READ | WASIP1_RIGHT_FD_WRITE,
+        )
+        .expect("open datagram");
+    assert_eq!(datagram.kind(), GuestFdKind::Datagram);
+
+    let stream = store
+        .open_wasip1_path_with_ledger(
+            &mut ledger,
+            3,
+            7,
+            b"net/stream0",
+            WASIP1_RIGHT_FD_READ | WASIP1_RIGHT_FD_WRITE,
+        )
+        .expect("open stream");
+    assert_eq!(stream.kind(), GuestFdKind::Stream);
+
+    let listener = store
+        .open_wasip1_path_with_ledger(&mut ledger, 3, 8, b"net/listener0", WASIP1_RIGHT_FD_READ)
+        .expect("open listener");
+    assert_eq!(listener.kind(), GuestFdKind::NetworkListener);
+
+    let remote = store
+        .open_wasip1_path_with_ledger(
+            &mut ledger,
+            3,
+            9,
+            b"remote/sensor0",
+            WASIP1_RIGHT_FD_READ | WASIP1_RIGHT_FD_WRITE,
+        )
+        .expect("open remote object");
+    assert_eq!(remote.kind(), GuestFdKind::RemoteObject);
+
+    let management = store
+        .open_wasip1_path_with_ledger(
+            &mut ledger,
+            3,
+            10,
+            b"mgmt/update",
+            WASIP1_RIGHT_FD_READ | WASIP1_RIGHT_FD_WRITE,
+        )
+        .expect("open management object");
+    assert_eq!(management.kind(), GuestFdKind::Management);
+
+    let telemetry = store
+        .open_wasip1_path_with_ledger(&mut ledger, 3, 11, b"telemetry/log", WASIP1_RIGHT_FD_WRITE)
+        .expect("open telemetry object");
+    assert_eq!(telemetry.kind(), GuestFdKind::Telemetry);
+
+    let mut out = [0u8; 4];
+    for fd in [
+        timer, uart, datagram, stream, listener, remote, management, telemetry,
+    ] {
+        assert_eq!(store.read(fd, 0, &mut out), Err(ChoreoFsError::WrongFdKind));
+        assert_eq!(store.write(fd, 0, b"x"), Err(ChoreoFsError::WrongFdKind));
+    }
+}
+
+#[test]
+fn choreofs_image_slot_and_state_snapshot_are_bounded_storage_objects() {
+    let mut store = TestStore::new();
+    store
+        .install_image_slot(b"image/app0")
+        .expect("install image slot");
+    store
+        .install_state_snapshot(b"state/last", b"old")
+        .expect("install state snapshot");
+
+    let mut ledger = ledger();
+    store
+        .grant_preopen_root(&mut ledger, 3)
+        .expect("grant preopen root");
+    let image = store
+        .open_wasip1_path_with_ledger(
+            &mut ledger,
+            3,
+            4,
+            b"image/app0",
+            WASIP1_RIGHT_FD_READ | WASIP1_RIGHT_FD_WRITE,
+        )
+        .expect("open image slot");
+    let state = store
+        .open_wasip1_path_with_ledger(
+            &mut ledger,
+            3,
+            5,
+            b"state/last",
+            WASIP1_RIGHT_FD_READ | WASIP1_RIGHT_FD_WRITE,
+        )
+        .expect("open state snapshot");
+
+    assert_eq!(store.write(image, 0, b"ab"), Ok(2));
+    assert_eq!(store.write(image, 2, b"cd"), Ok(2));
+    let mut out = [0u8; 8];
+    let len = store.read(image, 0, &mut out).expect("read image slot");
+    assert_eq!(&out[..len], b"abcd");
+
+    assert_eq!(store.write(state, 0, b"new"), Ok(3));
+    assert_eq!(store.write(state, 1, b"bad"), Err(ChoreoFsError::BadOffset));
+    let len = store.read(state, 0, &mut out).expect("read state snapshot");
+    assert_eq!(&out[..len], b"new");
 }
 
 #[test]

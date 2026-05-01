@@ -42,20 +42,20 @@ if [[ "${HIBANA_PICO_SKIP_BUILD:-0}" != 1 ]]; then
       --bin hibana-pico2w-swarm-sensor-4 \
       --bin hibana-pico2w-swarm-sensor-5 \
       --bin hibana-pico2w-swarm-sensor-6 \
-      --features "profile-pico2w-swarm-min embed-wasip1-artifacts"
+      --features "profile-rp2350-pico2w-swarm-min embed-wasip1-artifacts"
   elif [[ "${HIBANA_PICO_SPLIT_KERNELS:-0}" == 1 ]]; then
     cargo build \
       --target thumbv8m.main-none-eabi \
       --release \
       --bin hibana-pico2w-swarm-coordinator \
       --bin hibana-pico2w-swarm-sensor \
-      --features "profile-pico2w-swarm-min embed-wasip1-artifacts"
+      --features "profile-rp2350-pico2w-swarm-min embed-wasip1-artifacts"
   else
     cargo build \
       --target thumbv8m.main-none-eabi \
       --release \
       --bin hibana-pico2w-swarm-demo \
-      --features "profile-pico2w-swarm-min embed-wasip1-artifacts"
+      --features "profile-rp2350-pico2w-swarm-min embed-wasip1-artifacts"
   fi
 fi
 

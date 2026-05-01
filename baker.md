@@ -48,10 +48,10 @@ Source map:
 
 | Layer | File |
 | --- | --- |
-| Choreography | `src/choreography/local.rs::baker_led_blink_roles` |
+| Choreography | `src/choreography/local.rs::baker_led_blink_roles`, `baker_led_choreofs_blink_roles` |
 | Firmware localside | `src/projects/baker_link_led/main.rs` |
 | WASI guest ledger | `src/kernel/guest_ledger.rs` |
-| fd capability resolver | `src/kernel/fd_resolver.rs` |
+| fd/object route check | `src/kernel/fd_object.rs` |
 | Baker board fd/pin map | `src/machine/rp2040/baker_link.rs` |
 | Timer top-half / raw readiness | `src/machine/rp2040/timer.rs` |
 | Resolver admission | `src/kernel/resolver.rs` |
@@ -87,7 +87,7 @@ Build the WASI P1 guest artifacts first, then build the RP2040 firmware:
 bash ./scripts/check_wasip1_guest_builds.sh
 cargo build --target thumbv6m-none-eabi --release \
   --bin hibana-pico-baker-led-demo \
-  --features "profile-rp2040-baker-min embed-wasip1-artifacts"
+  --features "profile-rp2040-pico-min embed-wasip1-artifacts"
 ```
 
 The script rebuilds the Baker min LED guests with `--initial-memory=65536` and
@@ -257,7 +257,7 @@ cargo test --test host_baker_led_fd
 cargo test --test host_measurement_gates
 cargo build --target thumbv6m-none-eabi --release \
   --bin hibana-pico-baker-led-demo \
-  --features "profile-rp2040-baker-min embed-wasip1-artifacts"
+  --features "profile-rp2040-pico-min embed-wasip1-artifacts"
 ```
 
 Then flash and check:
@@ -482,7 +482,7 @@ RUSTFLAGS="-C link-arg=--initial-memory=65536 -C link-arg=-zstack-size=4096" \
 
 cargo build --target thumbv6m-none-eabi --release \
   --bin hibana-pico-baker-led-demo \
-  --features "profile-rp2040-baker-min embed-wasip1-artifacts baker-bad-order-demo"
+  --features "profile-rp2040-pico-min embed-wasip1-artifacts baker-bad-order-demo"
 ```
 
 The expected outcome is not LED success. It is a fail-closed stop before any
@@ -525,10 +525,10 @@ Host proofs:
 
 ```bash
 cargo test --test host_baker_led_fd \
-  baker_link_invalid_fd_wasip1_app_is_rejected_by_fd_resolver_without_gpio_progress
+  baker_link_invalid_fd_wasip1_app_is_rejected_by_fd_object_without_gpio_progress
 
 cargo test --test host_baker_led_fd \
-  baker_link_bad_payload_wasip1_app_is_rejected_by_fd_resolver_without_gpio_progress
+  baker_link_bad_payload_wasip1_app_is_rejected_by_fd_object_without_gpio_progress
 ```
 
 Firmware builds:
@@ -536,11 +536,11 @@ Firmware builds:
 ```bash
 cargo build --target thumbv6m-none-eabi --release \
   --bin hibana-pico-baker-led-demo \
-  --features "profile-rp2040-baker-min embed-wasip1-artifacts baker-invalid-fd-demo"
+  --features "profile-rp2040-pico-min embed-wasip1-artifacts baker-invalid-fd-demo"
 
 cargo build --target thumbv6m-none-eabi --release \
   --bin hibana-pico-baker-led-demo \
-  --features "profile-rp2040-baker-min embed-wasip1-artifacts baker-bad-payload-demo"
+  --features "profile-rp2040-pico-min embed-wasip1-artifacts baker-bad-payload-demo"
 ```
 
 Expected RAM markers:
@@ -555,6 +555,44 @@ These failures prove a different boundary from bad-order. Bad-order is rejected
 by the projected localside because the app asks for a syscall phase that is not
 open. Invalid-fd and bad-payload are rejected by the resolver after the legal
 `fd_write` phase arrives, and before any GPIO role progress is created.
+
+## ChoreoFS Path-Open Hardware Proof
+
+`wasip1-led-choreofs-open.wasm` is the physical Baker ChoreoFS proof. It is an
+ordinary Rust `fn main()` `wasm32-wasip1` app. The app opens LED objects by
+path, receives minted fds, then drives the same GPIO/timer choreography:
+
+```text
+path_open(9, "/device/led/green")  -> ChoreoFS GpioDevice -> fd 3
+path_open(9, "/device/led/orange") -> ChoreoFS GpioDevice -> fd 4
+path_open(9, "/device/led/red")    -> ChoreoFS GpioDevice -> fd 5
+fd_write(fd=3, "1")                -> Kernel -> GPIO -> GP22
+poll_oneoff(...)                   -> TIMER0 IRQ -> resolver -> PollReady
+```
+
+The choreography is
+`src/choreography/local.rs::baker_led_choreofs_blink_roles`: three path-open
+cycles, then the same Engine-owned `LoopContinue` / `LoopBreak` route as the
+traffic-light proof. Baker-specific ChoreoFS opens map `GpioDevice` objects to
+the explicit Baker GPIO route. Generic ChoreoFS object routes do not get to
+pretend to be GPIO.
+
+The negative ChoreoFS hardware patterns are:
+
+| Pattern | Meaning | Expected stage |
+| --- | --- | --- |
+| `choreofs-bad-path` | `/not/allowed` has no manifest object | `0x4849004b` |
+| `choreofs-bad-payload` | `fd_write("on")` reaches the LED object but violates LED payload policy | `0x4849004c` |
+| `choreofs-wrong-object` | `/device/not-gpio` mints an fd, then `fd_write("1")` rejects because the object is not GPIO | `0x4849004d` |
+
+The verified hardware commands are:
+
+```bash
+scripts/run_baker_link_hardware_pattern.sh choreofs
+scripts/run_baker_link_hardware_pattern.sh choreofs-bad-path
+scripts/run_baker_link_hardware_pattern.sh choreofs-bad-payload
+scripts/run_baker_link_hardware_pattern.sh choreofs-wrong-object
+```
 
 ## Chaser And Std-Source Variants
 
@@ -601,16 +639,14 @@ Firmware build:
 ```bash
 cargo build --target thumbv6m-none-eabi --release \
   --bin hibana-pico-baker-led-demo \
-  --features "profile-rp2040-baker-min embed-wasip1-artifacts baker-chaser-demo"
+  --features "profile-rp2040-pico-min embed-wasip1-artifacts baker-chaser-demo"
 ```
 
 `wasip1-led-ordinary-std-chaser.wasm` is the ordinary Rust std variant. It is a
 normal `fn main()` `wasm32-wasip1` artifact using Rust std `_start`, `File`
 fd writes, and `thread::sleep`; the source has no hand-written `__main_void`
-trampoline. It is a host/full-profile proof artifact, not a
-`profile-rp2040-baker-min` firmware payload. Baker min runs the same
-choreography through `CoreWasip1Instance` with the small no-main WASI P1
-artifacts linked to two initial pages.
+trampoline. It also has a Baker hardware profile when built with the 64 KiB
+initial-memory flags used by `scripts/check_wasip1_guest_builds.sh`.
 
 ```bash
 cargo test --test host_baker_led_fd \
@@ -626,9 +662,14 @@ markers by symbol:
 ```bash
 scripts/run_baker_link_hardware_pattern.sh traffic
 scripts/run_baker_link_hardware_pattern.sh chaser
+scripts/run_baker_link_hardware_pattern.sh ordinary-std
+scripts/run_baker_link_hardware_pattern.sh choreofs
 scripts/run_baker_link_hardware_pattern.sh bad-order
 scripts/run_baker_link_hardware_pattern.sh invalid-fd
 scripts/run_baker_link_hardware_pattern.sh bad-payload
+scripts/run_baker_link_hardware_pattern.sh choreofs-bad-path
+scripts/run_baker_link_hardware_pattern.sh choreofs-bad-payload
+scripts/run_baker_link_hardware_pattern.sh choreofs-wrong-object
 ```
 
 The positive patterns expect `HIBANA_DEMO_RESULT = 0x48494f4b`. The negative

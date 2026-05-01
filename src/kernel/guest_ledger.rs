@@ -29,6 +29,7 @@ pub enum GuestFdKind {
     Stdout,
     Stderr,
     Gpio,
+    Uart,
     Timer,
     LocalSensor,
     LocalActuator,
@@ -42,6 +43,7 @@ pub enum GuestFdKind {
     ChoreoObject,
     DirectoryView,
     NetworkListener,
+    RemoteObject,
     EphemeralPipe,
 }
 
@@ -52,6 +54,7 @@ impl From<ChoreoResourceKind> for GuestFdKind {
             ChoreoResourceKind::Stdout => Self::Stdout,
             ChoreoResourceKind::Stderr => Self::Stderr,
             ChoreoResourceKind::Gpio => Self::Gpio,
+            ChoreoResourceKind::Uart => Self::Uart,
             ChoreoResourceKind::Timer => Self::Timer,
             ChoreoResourceKind::LocalSensor => Self::LocalSensor,
             ChoreoResourceKind::LocalActuator => Self::LocalActuator,
@@ -65,6 +68,7 @@ impl From<ChoreoResourceKind> for GuestFdKind {
             ChoreoResourceKind::ChoreoObject => Self::ChoreoObject,
             ChoreoResourceKind::DirectoryView => Self::DirectoryView,
             ChoreoResourceKind::NetworkListener => Self::NetworkListener,
+            ChoreoResourceKind::RemoteObject => Self::RemoteObject,
             ChoreoResourceKind::EphemeralPipe => Self::EphemeralPipe,
         }
     }

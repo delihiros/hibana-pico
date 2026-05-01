@@ -25,6 +25,12 @@ const SIO_FIFO_RD: *const u32 = (SIO_BASE + 0x58) as *const u32;
 const FIFO_VLD: u32 = 1 << 0;
 #[cfg(all(target_arch = "arm", target_os = "none"))]
 const FIFO_RDY: u32 = 1 << 1;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const RP2040_FRAME_MAGIC: u32 = 0x4849_0000;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const RP2040_FRAME_MAGIC_MASK: u32 = 0xffff_0000;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const RP2040_ROUTE_MAGIC: u32 = 0x5254_0000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BackendError {
@@ -32,6 +38,7 @@ pub enum BackendError {
     QueueFull,
     QueueEmpty,
     RoleOutOfRange,
+    InvalidFrame,
 }
 
 impl From<BackendError> for TransportError {
@@ -291,6 +298,15 @@ fn rp2040_fifo_word_count(len: usize) -> usize {
 }
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]
+fn rp2040_role_core(role: u8) -> Result<u8, BackendError> {
+    match role {
+        0 | 2 | 3 => Ok(0),
+        1 => Ok(1),
+        _ => Err(BackendError::RoleOutOfRange),
+    }
+}
+
+#[cfg(all(target_arch = "arm", target_os = "none"))]
 fn rp2040_core_id() -> u8 {
     unsafe { read_volatile(SIO_CPUID) as u8 }
 }
@@ -341,7 +357,35 @@ fn rp2040_fifo_write_blocking(word: u32) {
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]
 fn rp2040_pack_header(frame: FrameOwned) -> u32 {
-    (frame.label as u32) | (((frame.len as u32) & 0xff) << 8)
+    RP2040_FRAME_MAGIC | (frame.label as u32) | (((frame.len as u32) & 0xff) << 8)
+}
+
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+fn rp2040_pack_route(role: u8) -> u32 {
+    RP2040_ROUTE_MAGIC | (role as u32)
+}
+
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+fn rp2040_decode_header(header: u32) -> Result<Option<(u8, usize)>, BackendError> {
+    if header & RP2040_FRAME_MAGIC_MASK != RP2040_FRAME_MAGIC {
+        return Ok(None);
+    }
+    let label = (header & 0xff) as u8;
+    let len = ((header >> 8) & 0xff) as usize;
+    if len > PAYLOAD_CAPACITY {
+        return Err(BackendError::PayloadTooLarge);
+    }
+    Ok(Some((label, len)))
+}
+
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+fn rp2040_decode_route(route: u32) -> Result<u8, BackendError> {
+    if route & RP2040_FRAME_MAGIC_MASK != RP2040_ROUTE_MAGIC {
+        return Err(BackendError::InvalidFrame);
+    }
+    let role = (route & 0xff) as u8;
+    let _ = rp2040_validate_role(role)?;
+    Ok(role)
 }
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]
@@ -416,10 +460,11 @@ fn rp2040_enqueue(role: u8, frame: FrameOwned) -> Result<(), BackendError> {
     if frame.len > PAYLOAD_CAPACITY {
         return Err(BackendError::PayloadTooLarge);
     }
-    if role >= 2 || role == rp2040_core_id() {
+    if rp2040_role_core(role)? == rp2040_core_id() {
         return rp2040_local_enqueue(role, frame);
     }
     rp2040_fifo_write_blocking(rp2040_pack_header(frame));
+    rp2040_fifo_write_blocking(rp2040_pack_route(role));
     for chunk in frame.as_slice().chunks(4) {
         rp2040_fifo_write_blocking(rp2040_pack_payload_word(chunk));
     }
@@ -442,36 +487,39 @@ fn rp2040_dequeue(role: u8) -> Result<Option<FrameOwned>, BackendError> {
         return Ok(Some(frame));
     }
 
-    let Some(header) = rp2040_fifo_try_read() else {
-        return Ok(None);
-    };
+    loop {
+        let Some(header) = rp2040_fifo_try_read() else {
+            return Ok(None);
+        };
+        let Some((label, len)) = rp2040_decode_header(header)? else {
+            continue;
+        };
+        let dst_role = rp2040_decode_route(rp2040_fifo_read_blocking())?;
+        let mut payload = [0u8; PAYLOAD_CAPACITY];
+        let word_count = rp2040_fifo_word_count(len);
 
-    let label = (header & 0xff) as u8;
-    let len = ((header >> 8) & 0xff) as usize;
-    let mut payload = [0u8; PAYLOAD_CAPACITY];
-    let word_count = rp2040_fifo_word_count(len);
-
-    if len > PAYLOAD_CAPACITY {
-        for _ in 0..word_count {
-            let _ = rp2040_fifo_read_blocking();
+        for word_index in 0..word_count {
+            let word = rp2040_fifo_read_blocking();
+            let start = word_index * 4;
+            let end = core::cmp::min(start + 4, len);
+            let chunk_len = end.checked_sub(start).ok_or(BackendError::InvalidFrame)?;
+            if chunk_len > 4 || end > PAYLOAD_CAPACITY {
+                return Err(BackendError::InvalidFrame);
+            }
+            payload[start..end].copy_from_slice(&word.to_le_bytes()[..chunk_len]);
         }
-        return Err(BackendError::PayloadTooLarge);
-    }
 
-    for word_index in 0..word_count {
-        let word = rp2040_fifo_read_blocking();
-        let start = word_index * 4;
-        let end = core::cmp::min(start + 4, len);
-        payload[start..end].copy_from_slice(&word.to_le_bytes()[..(end - start)]);
+        let frame = FrameOwned {
+            label,
+            len,
+            payload,
+        };
+        if dst_role == role {
+            let _ = rp2040_take_recv_waker(role)?;
+            return Ok(Some(frame));
+        }
+        rp2040_requeue_put(dst_role, frame)?;
     }
-
-    let frame = FrameOwned {
-        label,
-        len,
-        payload,
-    };
-    let _ = rp2040_take_recv_waker(role)?;
-    Ok(Some(frame))
 }
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]

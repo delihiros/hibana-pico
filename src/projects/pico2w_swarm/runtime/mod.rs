@@ -805,6 +805,7 @@ async fn core0_session(endpoint: &mut DemoCore0Endpoint, node_count: u8) {
 
     if node_count == QEMU_CYW43439_MAX_ROLES as u8 {
         core0_remote_actuator(endpoint, NodeId::new(3), aggregate).await;
+        core0_expect_gateway_telemetry(endpoint, NodeId::new(3)).await;
         core0_network_object(endpoint, NodeId::new(4), aggregate).await;
         core0_remote_management(endpoint, NodeId::new(5)).await;
     }
@@ -841,6 +842,24 @@ async fn core0_remote_actuator(
     uart_hex_line(
         "[core0] remote actuator route ack node 0x",
         actuator_node.raw() as u32,
+    );
+}
+
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+async fn core0_expect_gateway_telemetry(endpoint: &mut DemoCore0Endpoint, source_node: NodeId) {
+    let telemetry = match endpoint.recv::<SwarmTelemetryMsg>().await {
+        Ok(telemetry) => telemetry,
+        Err(_) => fail_closed("[core0] recv gateway telemetry acceptance"),
+    };
+    if telemetry.node_id() != source_node
+        || !telemetry.role_mask().contains(NodeRole::Actuator)
+        || telemetry.session_generation() != SESSION_GENERATION
+    {
+        fail_closed("[core0] gateway telemetry acceptance mismatch");
+    }
+    uart_hex_line(
+        "[core0] gateway telemetry accepted node 0x",
+        telemetry.node_id().raw() as u32,
     );
 }
 
@@ -1301,6 +1320,15 @@ async fn core1_recv_gateway_telemetry<const ROLE: u8>(endpoint: &mut Endpoint<'s
         "[core1] gateway telemetry accepted node 0x",
         telemetry.node_id().raw() as u32,
     );
+    match endpoint
+        .flow::<SwarmTelemetryMsg>()
+        .expect("core1 flow<gateway telemetry acceptance>")
+        .send(&telemetry)
+        .await
+    {
+        Ok(_) => {}
+        Err(_) => fail_closed("[core1] send gateway telemetry acceptance"),
+    }
 }
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]

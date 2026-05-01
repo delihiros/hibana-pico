@@ -54,7 +54,7 @@ use hibana_pico::{
 use hibana_pico::kernel::{
     choreofs::ChoreoFsError,
     engine::{
-        wasip1_host::{CoreWasip1HostRunError, CoreWasip1HostRunner},
+        wasip1_host::{CoreWasip1HostRunError, CoreWasip1HostRunReport, CoreWasip1HostRunner},
         wasm::CoreWasip1Instance,
     },
     features::Wasip1HandlerSet,
@@ -590,8 +590,8 @@ fn rust_built_wasip1_memory_grow_artifacts_exercise_fence_and_stale_lease_reject
 fn rust_built_ordinary_std_core_coverage_runs_on_host_full_profile() {
     let artifact = artifact("wasip1-std-core-coverage");
     assert!(
-        CoreWasip1Instance::new(&artifact, Wasip1HandlerSet::BAKER_MIN).is_err(),
-        "ordinary std coverage app must not fit the tiny Baker profile"
+        CoreWasip1Instance::new(&artifact, Wasip1HandlerSet::PICO_MIN).is_err(),
+        "ordinary std coverage app must not fit the tiny RP2040/Pico profile"
     );
 
     let mut runner = CoreWasip1HostRunner::new(&artifact).expect("create host/full std runner");
@@ -614,6 +614,7 @@ fn rust_built_ordinary_std_core_coverage_runs_on_host_full_profile() {
             .any(|request| matches!(request, EngineReq::FdWrite(_))),
         "ordinary std app must enter the typed fd_write syscall stream"
     );
+    assert_host_full_runner_drives_projected_localside(&report);
 }
 
 #[test]
@@ -658,6 +659,7 @@ fn rust_built_std_choreofs_app_uses_resource_store_through_host_full_runner() {
             .any(|request| matches!(request, EngineReq::FdWrite(_))),
         "ChoreoFS result must enter the typed fd_write syscall stream"
     );
+    assert_host_full_runner_drives_projected_localside(&report);
 }
 
 #[test]
@@ -692,6 +694,7 @@ fn rust_built_std_choreofs_append_app_writes_and_reads_resource_store() {
         report.choreofs_read_count >= 1,
         "append proof must read through ChoreoFS fd_read"
     );
+    assert_host_full_runner_drives_projected_localside(&report);
 }
 
 #[test]
@@ -775,6 +778,7 @@ fn rust_built_std_sock_app_uses_network_object_without_p2() {
             .any(|request| matches!(request, EngineReq::FdRead(_))),
         "sock_recv must enter the typed fd_read syscall stream"
     );
+    assert_host_full_runner_drives_projected_localside(&report);
 }
 
 #[test]
@@ -821,6 +825,20 @@ fn rust_built_std_sock_accept_app_mints_network_object_without_socket_authority(
             .iter()
             .any(|request| matches!(request, EngineReq::FdClose(_))),
         "accepted sock_shutdown must enter typed fd_close stream"
+    );
+    assert_host_full_runner_drives_projected_localside(&report);
+}
+
+#[cfg(feature = "profile-host-linux-wasip1-full")]
+fn assert_host_full_runner_drives_projected_localside(report: &CoreWasip1HostRunReport) {
+    assert!(
+        report.localside_drive_count > 0,
+        "host/full runner must drive projected localside, not just record EngineReq/EngineRet"
+    );
+    assert_eq!(
+        report.localside_drive_count as usize,
+        report.engine_trace.len(),
+        "every recorded EngineReq must pass through a projected localside send/recv path"
     );
 }
 

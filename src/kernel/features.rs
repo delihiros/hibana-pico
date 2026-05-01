@@ -358,7 +358,7 @@ impl Wasip1HandlerSet {
         network_object: false,
     };
 
-    pub const BAKER_MIN: Self = Self {
+    pub const PICO_MIN: Self = Self {
         args_env: false,
         fd_write: true,
         fd_read: false,
@@ -372,6 +372,42 @@ impl Wasip1HandlerSet {
         proc_raise: false,
         sched_yield: false,
         path_minimal: false,
+        path_full: false,
+        network_object: false,
+    };
+
+    pub const PICO_STD_START: Self = Self {
+        args_env: true,
+        fd_write: true,
+        fd_read: false,
+        fd_fdstat_get: false,
+        fd_close: false,
+        clock_res_get: false,
+        clock_time_get: false,
+        poll_oneoff: true,
+        random_get: false,
+        proc_exit: true,
+        proc_raise: false,
+        sched_yield: false,
+        path_minimal: false,
+        path_full: false,
+        network_object: false,
+    };
+
+    pub const PICO_STD_CHOREOFS: Self = Self {
+        args_env: true,
+        fd_write: true,
+        fd_read: false,
+        fd_fdstat_get: false,
+        fd_close: false,
+        clock_res_get: false,
+        clock_time_get: false,
+        poll_oneoff: true,
+        random_get: false,
+        proc_exit: true,
+        proc_raise: false,
+        sched_yield: false,
+        path_minimal: true,
         path_full: false,
         network_object: false,
     };
@@ -514,8 +550,9 @@ impl Wasip1ControlSubstrate {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct FeatureProfiles {
-    pub rp2040_baker_min: bool,
-    pub pico2w_swarm_min: bool,
+    pub rp2040_pico_min: bool,
+    pub rp2040_picow_swarm_min: bool,
+    pub rp2350_pico2w_swarm_min: bool,
     pub host_qemu_swarm: bool,
     pub host_linux_wasip1_full: bool,
 }
@@ -523,8 +560,9 @@ pub struct FeatureProfiles {
 impl FeatureProfiles {
     pub const fn active() -> Self {
         Self {
-            rp2040_baker_min: cfg!(feature = "profile-rp2040-baker-min"),
-            pico2w_swarm_min: cfg!(feature = "profile-pico2w-swarm-min"),
+            rp2040_pico_min: cfg!(feature = "profile-rp2040-pico-min"),
+            rp2040_picow_swarm_min: cfg!(feature = "profile-rp2040-picow-swarm-min"),
+            rp2350_pico2w_swarm_min: cfg!(feature = "profile-rp2350-pico2w-swarm-min"),
             host_qemu_swarm: cfg!(feature = "profile-host-qemu-swarm"),
             host_linux_wasip1_full: cfg!(feature = "profile-host-linux-wasip1-full"),
         }
@@ -571,8 +609,8 @@ mod tests {
     };
 
     #[test]
-    fn baker_min_profile_has_only_the_small_wasi_surface() {
-        let handlers = Wasip1HandlerSet::BAKER_MIN;
+    fn pico_min_profile_has_only_the_small_wasi_surface() {
+        let handlers = Wasip1HandlerSet::PICO_MIN;
 
         assert!(handlers.supports(Wasip1Syscall::FdWrite));
         assert!(handlers.supports(Wasip1Syscall::PollOneoff));

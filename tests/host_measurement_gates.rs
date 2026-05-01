@@ -346,7 +346,7 @@ fn plan_pico_source_tree_keeps_removed_compatibility_names_out() {
 }
 
 #[test]
-fn plan_pico_document_keeps_wasi_import_trampoline_name_no_bridge() {
+fn plan_pico_document_keeps_wasi_import_trampoline_no_bridge_naming() {
     let plan = include_str!("../plan.md");
 
     assert!(
@@ -354,7 +354,7 @@ fn plan_pico_document_keeps_wasi_import_trampoline_name_no_bridge() {
         "plan.md must not describe the WASI import trampoline as a bridge owner"
     );
     assert!(
-        plan.contains("PicoWasiImportTrampoline"),
-        "plan.md should name the WASI import owner as PicoWasiImportTrampoline"
+        plan.contains("WASI P1 import trampoline"),
+        "plan.md should name the WASI import boundary without bridge naming"
     );
 }

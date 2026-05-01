@@ -32,8 +32,18 @@ pub enum ChoreoFsObjectKind {
     StaticBlob,
     ConfigCell,
     AppendLog,
+    ImageSlot,
+    StateSnapshot,
     Directory,
     GpioDevice,
+    TimerDevice,
+    UartDevice,
+    NetworkDatagram,
+    NetworkStream,
+    NetworkListener,
+    RemoteObject,
+    ManagementObject,
+    TelemetryObject,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -242,12 +252,56 @@ impl<const N: usize, const PATH: usize, const DATA: usize> ChoreoFsStore<N, PATH
         self.install(ChoreoFsObjectKind::AppendLog, path, &[])
     }
 
+    pub fn install_image_slot(&mut self, path: &[u8]) -> Result<u16, ChoreoFsError> {
+        self.install(ChoreoFsObjectKind::ImageSlot, path, &[])
+    }
+
+    pub fn install_state_snapshot(
+        &mut self,
+        path: &[u8],
+        data: &[u8],
+    ) -> Result<u16, ChoreoFsError> {
+        self.install(ChoreoFsObjectKind::StateSnapshot, path, data)
+    }
+
     pub fn install_directory(&mut self, path: &[u8]) -> Result<u16, ChoreoFsError> {
         self.install(ChoreoFsObjectKind::Directory, path, &[])
     }
 
     pub fn install_gpio_device(&mut self, path: &[u8]) -> Result<u16, ChoreoFsError> {
         self.install(ChoreoFsObjectKind::GpioDevice, path, &[])
+    }
+
+    pub fn install_timer_device(&mut self, path: &[u8]) -> Result<u16, ChoreoFsError> {
+        self.install(ChoreoFsObjectKind::TimerDevice, path, &[])
+    }
+
+    pub fn install_uart_device(&mut self, path: &[u8]) -> Result<u16, ChoreoFsError> {
+        self.install(ChoreoFsObjectKind::UartDevice, path, &[])
+    }
+
+    pub fn install_network_datagram(&mut self, path: &[u8]) -> Result<u16, ChoreoFsError> {
+        self.install(ChoreoFsObjectKind::NetworkDatagram, path, &[])
+    }
+
+    pub fn install_network_stream(&mut self, path: &[u8]) -> Result<u16, ChoreoFsError> {
+        self.install(ChoreoFsObjectKind::NetworkStream, path, &[])
+    }
+
+    pub fn install_network_listener(&mut self, path: &[u8]) -> Result<u16, ChoreoFsError> {
+        self.install(ChoreoFsObjectKind::NetworkListener, path, &[])
+    }
+
+    pub fn install_remote_object(&mut self, path: &[u8]) -> Result<u16, ChoreoFsError> {
+        self.install(ChoreoFsObjectKind::RemoteObject, path, &[])
+    }
+
+    pub fn install_management_object(&mut self, path: &[u8]) -> Result<u16, ChoreoFsError> {
+        self.install(ChoreoFsObjectKind::ManagementObject, path, &[])
+    }
+
+    pub fn install_telemetry_object(&mut self, path: &[u8]) -> Result<u16, ChoreoFsError> {
+        self.install(ChoreoFsObjectKind::TelemetryObject, path, &[])
     }
 
     pub fn grant_preopen_root<const FDS: usize, const LEASES: usize, const PENDING: usize>(
@@ -339,14 +393,43 @@ impl<const N: usize, const PATH: usize, const DATA: usize> ChoreoFsStore<N, PATH
                 }
                 ChoreoResourceKind::ChoreoObject
             }
-            ChoreoFsObjectKind::ConfigCell | ChoreoFsObjectKind::AppendLog => {
-                ChoreoResourceKind::ChoreoObject
-            }
+            ChoreoFsObjectKind::ConfigCell
+            | ChoreoFsObjectKind::AppendLog
+            | ChoreoFsObjectKind::ImageSlot
+            | ChoreoFsObjectKind::StateSnapshot => ChoreoResourceKind::ChoreoObject,
             ChoreoFsObjectKind::GpioDevice => {
                 if !rights.allows(PicoFdRights::Write) {
                     return Err(ChoreoFsError::PermissionDenied);
                 }
                 ChoreoResourceKind::Gpio
+            }
+            ChoreoFsObjectKind::TimerDevice => {
+                if !rights.allows(PicoFdRights::Read) {
+                    return Err(ChoreoFsError::PermissionDenied);
+                }
+                ChoreoResourceKind::Timer
+            }
+            ChoreoFsObjectKind::UartDevice => {
+                if !rights.allows(PicoFdRights::Write) {
+                    return Err(ChoreoFsError::PermissionDenied);
+                }
+                ChoreoResourceKind::Uart
+            }
+            ChoreoFsObjectKind::NetworkDatagram => ChoreoResourceKind::NetworkDatagram,
+            ChoreoFsObjectKind::NetworkStream => ChoreoResourceKind::NetworkStream,
+            ChoreoFsObjectKind::NetworkListener => {
+                if !rights.allows(PicoFdRights::Read) {
+                    return Err(ChoreoFsError::PermissionDenied);
+                }
+                ChoreoResourceKind::NetworkListener
+            }
+            ChoreoFsObjectKind::RemoteObject => ChoreoResourceKind::RemoteObject,
+            ChoreoFsObjectKind::ManagementObject => ChoreoResourceKind::Management,
+            ChoreoFsObjectKind::TelemetryObject => {
+                if !rights.allows(PicoFdRights::Write) {
+                    return Err(ChoreoFsError::PermissionDenied);
+                }
+                ChoreoResourceKind::Telemetry
             }
         };
         Ok(ChoreoFsOpened {
@@ -382,7 +465,15 @@ impl<const N: usize, const PATH: usize, const DATA: usize> ChoreoFsStore<N, PATH
         let object = self.object_from_fd(fd)?;
         match object.kind {
             ChoreoFsObjectKind::Directory => return Err(ChoreoFsError::IsDirectory),
-            ChoreoFsObjectKind::GpioDevice => return Err(ChoreoFsError::WrongFdKind),
+            ChoreoFsObjectKind::GpioDevice
+            | ChoreoFsObjectKind::TimerDevice
+            | ChoreoFsObjectKind::UartDevice
+            | ChoreoFsObjectKind::NetworkDatagram
+            | ChoreoFsObjectKind::NetworkStream
+            | ChoreoFsObjectKind::NetworkListener
+            | ChoreoFsObjectKind::RemoteObject
+            | ChoreoFsObjectKind::ManagementObject
+            | ChoreoFsObjectKind::TelemetryObject => return Err(ChoreoFsError::WrongFdKind),
             _ => {}
         }
         let data = object.data();
@@ -411,7 +502,15 @@ impl<const N: usize, const PATH: usize, const DATA: usize> ChoreoFsStore<N, PATH
         match object.kind {
             ChoreoFsObjectKind::StaticBlob => Err(ChoreoFsError::ReadOnly),
             ChoreoFsObjectKind::Directory => Err(ChoreoFsError::IsDirectory),
-            ChoreoFsObjectKind::GpioDevice => Err(ChoreoFsError::WrongFdKind),
+            ChoreoFsObjectKind::GpioDevice
+            | ChoreoFsObjectKind::TimerDevice
+            | ChoreoFsObjectKind::UartDevice
+            | ChoreoFsObjectKind::NetworkDatagram
+            | ChoreoFsObjectKind::NetworkStream
+            | ChoreoFsObjectKind::NetworkListener
+            | ChoreoFsObjectKind::RemoteObject
+            | ChoreoFsObjectKind::ManagementObject
+            | ChoreoFsObjectKind::TelemetryObject => Err(ChoreoFsError::WrongFdKind),
             ChoreoFsObjectKind::ConfigCell => {
                 if offset != 0 {
                     return Err(ChoreoFsError::BadOffset);
@@ -436,6 +535,31 @@ impl<const N: usize, const PATH: usize, const DATA: usize> ChoreoFsStore<N, PATH
                 }
                 object.data[object.data_len..end].copy_from_slice(bytes);
                 object.data_len = end;
+                Ok(bytes.len())
+            }
+            ChoreoFsObjectKind::ImageSlot => {
+                if offset > object.data_len {
+                    return Err(ChoreoFsError::BadOffset);
+                }
+                let end = offset
+                    .checked_add(bytes.len())
+                    .ok_or(ChoreoFsError::ObjectTooLarge)?;
+                if end > DATA {
+                    return Err(ChoreoFsError::ObjectTooLarge);
+                }
+                object.data[offset..end].copy_from_slice(bytes);
+                object.data_len = core::cmp::max(object.data_len, end);
+                Ok(bytes.len())
+            }
+            ChoreoFsObjectKind::StateSnapshot => {
+                if offset != 0 {
+                    return Err(ChoreoFsError::BadOffset);
+                }
+                if bytes.len() > DATA {
+                    return Err(ChoreoFsError::ObjectTooLarge);
+                }
+                object.data[..bytes.len()].copy_from_slice(bytes);
+                object.data_len = bytes.len();
                 Ok(bytes.len())
             }
         }

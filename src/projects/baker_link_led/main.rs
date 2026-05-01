@@ -2,32 +2,82 @@
 #![cfg_attr(all(target_arch = "arm", target_os = "none"), no_main)]
 
 #[cfg(any(
-    all(feature = "baker-bad-order-demo", feature = "baker-chaser-demo"),
-    all(feature = "baker-bad-order-demo", feature = "baker-ordinary-std-demo"),
-    all(feature = "baker-bad-order-demo", feature = "baker-invalid-fd-demo"),
-    all(feature = "baker-bad-order-demo", feature = "baker-bad-payload-demo"),
-    all(feature = "baker-chaser-demo", feature = "baker-ordinary-std-demo"),
-    all(feature = "baker-chaser-demo", feature = "baker-invalid-fd-demo"),
-    all(feature = "baker-chaser-demo", feature = "baker-bad-payload-demo"),
-    all(feature = "baker-ordinary-std-demo", feature = "baker-invalid-fd-demo"),
+    all(
+        feature = "baker-bad-order-demo",
+        any(
+            feature = "baker-chaser-demo",
+            feature = "baker-ordinary-std-demo",
+            feature = "baker-invalid-fd-demo",
+            feature = "baker-bad-payload-demo",
+            feature = "baker-choreofs-demo",
+            feature = "baker-choreofs-bad-path-demo",
+            feature = "baker-choreofs-bad-payload-demo",
+            feature = "baker-choreofs-wrong-object-demo"
+        )
+    ),
+    all(
+        feature = "baker-chaser-demo",
+        any(
+            feature = "baker-ordinary-std-demo",
+            feature = "baker-invalid-fd-demo",
+            feature = "baker-bad-payload-demo",
+            feature = "baker-choreofs-demo",
+            feature = "baker-choreofs-bad-path-demo",
+            feature = "baker-choreofs-bad-payload-demo",
+            feature = "baker-choreofs-wrong-object-demo"
+        )
+    ),
     all(
         feature = "baker-ordinary-std-demo",
-        feature = "baker-bad-payload-demo"
+        any(
+            feature = "baker-invalid-fd-demo",
+            feature = "baker-bad-payload-demo",
+            feature = "baker-choreofs-demo",
+            feature = "baker-choreofs-bad-path-demo",
+            feature = "baker-choreofs-bad-payload-demo",
+            feature = "baker-choreofs-wrong-object-demo"
+        )
     ),
-    all(feature = "baker-invalid-fd-demo", feature = "baker-bad-payload-demo")
+    all(
+        feature = "baker-invalid-fd-demo",
+        any(
+            feature = "baker-bad-payload-demo",
+            feature = "baker-choreofs-demo",
+            feature = "baker-choreofs-bad-path-demo",
+            feature = "baker-choreofs-bad-payload-demo",
+            feature = "baker-choreofs-wrong-object-demo"
+        )
+    ),
+    all(
+        feature = "baker-bad-payload-demo",
+        any(
+            feature = "baker-choreofs-demo",
+            feature = "baker-choreofs-bad-path-demo",
+            feature = "baker-choreofs-bad-payload-demo",
+            feature = "baker-choreofs-wrong-object-demo"
+        )
+    ),
+    all(
+        feature = "baker-choreofs-demo",
+        any(
+            feature = "baker-choreofs-bad-path-demo",
+            feature = "baker-choreofs-bad-payload-demo",
+            feature = "baker-choreofs-wrong-object-demo"
+        )
+    ),
+    all(
+        feature = "baker-choreofs-bad-path-demo",
+        any(
+            feature = "baker-choreofs-bad-payload-demo",
+            feature = "baker-choreofs-wrong-object-demo"
+        )
+    ),
+    all(
+        feature = "baker-choreofs-bad-payload-demo",
+        feature = "baker-choreofs-wrong-object-demo"
+    )
 ))]
-compile_error!(
-    "select at most one Baker WASI guest pattern: baker-bad-order-demo, baker-chaser-demo, baker-ordinary-std-demo, baker-invalid-fd-demo, baker-bad-payload-demo"
-);
-
-#[cfg(all(
-    target_arch = "arm",
-    target_os = "none",
-    feature = "baker-ordinary-std-demo"
-))]
-compile_error!(
-    "baker-ordinary-std-demo is a host/full-profile artifact proof, not an RP2040 baker-min firmware payload"
-);
+compile_error!("select at most one Baker WASI guest pattern");
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]
 use core::{
@@ -50,6 +100,29 @@ use hibana::{
         tap::TapEvent,
     },
 };
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+#[cfg(all(
+    target_arch = "arm",
+    target_os = "none",
+    not(any(
+        feature = "baker-choreofs-demo",
+        feature = "baker-choreofs-bad-path-demo",
+        feature = "baker-choreofs-bad-payload-demo",
+        feature = "baker-choreofs-wrong-object-demo"
+    ))
+))]
+use hibana_pico::choreography::local::baker_led_blink_roles;
+#[cfg(all(
+    target_arch = "arm",
+    target_os = "none",
+    any(
+        feature = "baker-choreofs-demo",
+        feature = "baker-choreofs-bad-path-demo",
+        feature = "baker-choreofs-bad-payload-demo",
+        feature = "baker-choreofs-wrong-object-demo"
+    )
+))]
+use hibana_pico::choreography::local::baker_led_choreofs_blink_roles;
 #[cfg(all(
     target_arch = "arm",
     target_os = "none",
@@ -58,21 +131,22 @@ use hibana::{
 use hibana_pico::choreography::protocol::PollOneoff;
 #[cfg(all(target_arch = "arm", target_os = "none"))]
 use hibana_pico::{
-    choreography::{
-        local::baker_led_blink_roles,
-        protocol::{
-            BakerTrafficLoopBreakControl, BakerTrafficLoopContinueControl, BudgetRun, BudgetRunMsg,
-            EngineLabelUniverse, EngineReq, EngineRet, FdWrite, FdWriteDone, GpioSet,
-            LABEL_GPIO_SET, LABEL_GPIO_SET_DONE, LABEL_MEM_BORROW_READ, LABEL_MEM_RELEASE,
-            LABEL_TIMER_SLEEP_DONE, LABEL_TIMER_SLEEP_UNTIL, LABEL_WASI_FD_WRITE,
-            LABEL_WASI_FD_WRITE_RET, LABEL_WASI_POLL_ONEOFF, LABEL_WASI_POLL_ONEOFF_RET,
-            LABEL_WASI_PROC_EXIT, MemBorrow, MemReadGrantControl, MemRelease, MemRights,
-            POLICY_BAKER_TRAFFIC_LOOP, PollReady, ProcExitStatus, TimerSleepDone, TimerSleepUntil,
-        },
+    choreography::protocol::{
+        BakerTrafficLoopBreakControl, BakerTrafficLoopContinueControl, BudgetRun, BudgetRunMsg,
+        EngineLabelUniverse, EngineReq, EngineRet, FdWrite, FdWriteDone, GpioSet, LABEL_GPIO_SET,
+        LABEL_GPIO_SET_DONE, LABEL_MEM_BORROW_READ, LABEL_MEM_RELEASE, LABEL_TIMER_SLEEP_DONE,
+        LABEL_TIMER_SLEEP_UNTIL, LABEL_WASI_FD_WRITE, LABEL_WASI_FD_WRITE_RET,
+        LABEL_WASI_PATH_OPEN, LABEL_WASI_PATH_OPEN_RET, LABEL_WASI_POLL_ONEOFF,
+        LABEL_WASI_POLL_ONEOFF_RET, LABEL_WASI_PROC_EXIT, MemBorrow, MemReadGrantControl,
+        MemRelease, MemRights, POLICY_BAKER_TRAFFIC_LOOP, PathOpen, PathOpened, PollReady,
+        ProcExitStatus, TimerSleepDone, TimerSleepUntil, WASIP1_STREAM_CHUNK_CAPACITY,
     },
     kernel::{
-        engine::wasm::{CoreWasip1Instance, CoreWasip1Trap},
-        fd_resolver::{GpioFdWriteError, resolve_gpio_fd_write},
+        choreofs::ChoreoFsError,
+        engine::wasm::{
+            CoreWasip1Instance, CoreWasip1PathCall, CoreWasip1PathKind, CoreWasip1Trap, WasmError,
+        },
+        fd_object::{GpioFdWriteError, check_gpio_object_fd_write},
         features::Wasip1HandlerSet,
         guest_ledger::GuestLedger,
         resolver::{
@@ -80,8 +154,10 @@ use hibana_pico::{
         },
     },
     machine::rp2040::baker_link::{
-        BAKER_LINK_LED_ACTIVE_HIGH, BAKER_LINK_LED_PINS, BAKER_LINK_TRAFFIC_LIGHT_PATTERN_STEPS,
-        apply_baker_link_led_bank_set, baker_link_led_fd_write_route, baker_link_pico_min_ledger,
+        BAKER_LINK_CHOREOFS_PREOPEN_FD, BAKER_LINK_LED_ACTIVE_HIGH, BAKER_LINK_LED_PINS,
+        BAKER_LINK_TRAFFIC_LIGHT_PATTERN_STEPS, BakerLinkLedResourceStore,
+        apply_baker_link_led_bank_set, baker_link_choreofs_ledger, baker_link_led_fd_write_route,
+        baker_link_led_resource_store, open_baker_link_choreofs_path,
     },
     machine::rp2040::sio::Rp2040SioBackend,
     machine::rp2040::{clock, timer, uart},
@@ -159,7 +235,10 @@ const RESULT_SUCCESS: u32 = 0x4849_4f4b;
     any(
         feature = "baker-bad-order-demo",
         feature = "baker-invalid-fd-demo",
-        feature = "baker-bad-payload-demo"
+        feature = "baker-bad-payload-demo",
+        feature = "baker-choreofs-bad-path-demo",
+        feature = "baker-choreofs-bad-payload-demo",
+        feature = "baker-choreofs-wrong-object-demo"
     )
 ))]
 const RESULT_EXPECTED_REJECT: u32 = 0x4849_524a;
@@ -216,6 +295,10 @@ const STAGE_KERNEL_FD_WRITE_GPIO_DONE: u32 = 0x4849_0024;
 #[cfg(all(target_arch = "arm", target_os = "none"))]
 const STAGE_KERNEL_PROC_EXIT_RECV: u32 = 0x4849_0025;
 #[cfg(all(target_arch = "arm", target_os = "none"))]
+const STAGE_KERNEL_RUN_SEND_BEGIN: u32 = 0x4849_0026;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const STAGE_KERNEL_RUN_SEND_DONE: u32 = 0x4849_0027;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
 const STAGE_ENGINE_BEGIN: u32 = 0x4849_0030;
 #[cfg(all(target_arch = "arm", target_os = "none"))]
 const STAGE_ENGINE_FD_WRITE_BEGIN: u32 = 0x4849_0031;
@@ -234,7 +317,55 @@ const STAGE_ENGINE_LOOP_CONTINUE_SENT: u32 = 0x4849_0037;
 #[cfg(all(target_arch = "arm", target_os = "none"))]
 const STAGE_ENGINE_LOOP_BREAK_SENT: u32 = 0x4849_0038;
 #[cfg(all(target_arch = "arm", target_os = "none"))]
+const STAGE_ENGINE_TRAP_FD_WRITE: u32 = 0x4849_0039;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const STAGE_ENGINE_TRAP_POLL_ONEOFF: u32 = 0x4849_003a;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const STAGE_ENGINE_TRAP_ENVIRON_SIZES: u32 = 0x4849_003b;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const STAGE_ENGINE_TRAP_ENVIRON_GET: u32 = 0x4849_003c;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const STAGE_ENGINE_TRAP_ARGS_SIZES: u32 = 0x4849_003d;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const STAGE_ENGINE_TRAP_ARGS_GET: u32 = 0x4849_003e;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const STAGE_ENGINE_TRAP_MEMORY_GROW: u32 = 0x4849_003f;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const STAGE_ENGINE_TRAP_UNSUPPORTED: u32 = 0x4849_0040;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const STAGE_ENGINE_RUN_RECV_BEGIN: u32 = 0x4849_0041;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
 const STAGE_ENGINE_BORROW_SEND_ERR: u32 = 0x4849_0042;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const STAGE_ENGINE_RUN_RECV_DONE: u32 = 0x4849_0046;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const STAGE_KERNEL_RUN_SEND_ERR: u32 = 0x4849_0047;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const STAGE_ENGINE_RUN_RECV_ERR: u32 = 0x4849_0048;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const STAGE_ENGINE_RUN_MISMATCH: u32 = 0x4849_0049;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const STAGE_KERNEL_RUN_FLOW_ERR: u32 = 0x4849_004a;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const STAGE_ENGINE_RESUME_ERR_TRUNCATED: u32 = 0x4849_0101;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const STAGE_ENGINE_RESUME_ERR_INVALID: u32 = 0x4849_0102;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const STAGE_ENGINE_RESUME_ERR_UNSUPPORTED: u32 = 0x4849_0103;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const STAGE_ENGINE_RESUME_ERR_STACK_OVERFLOW: u32 = 0x4849_0104;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const STAGE_ENGINE_RESUME_ERR_STACK_UNDERFLOW: u32 = 0x4849_0105;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const STAGE_ENGINE_RESUME_ERR_PENDING: u32 = 0x4849_0106;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const STAGE_ENGINE_RESUME_ERR_REPLY: u32 = 0x4849_0107;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const STAGE_ENGINE_RESUME_ERR_TRAP: u32 = 0x4849_0108;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const STAGE_ENGINE_RESUME_ERR_FUEL: u32 = 0x4849_0109;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const STAGE_ENGINE_RESUME_ERR_OPCODE_BASE: u32 = 0x4849_0200;
 #[cfg(all(
     target_arch = "arm",
     target_os = "none",
@@ -253,10 +384,58 @@ const STAGE_INVALID_FD_REJECTED: u32 = 0x4849_0044;
     feature = "baker-bad-payload-demo"
 ))]
 const STAGE_BAD_PAYLOAD_REJECTED: u32 = 0x4849_0045;
+#[cfg(all(
+    target_arch = "arm",
+    target_os = "none",
+    feature = "baker-choreofs-bad-path-demo"
+))]
+const STAGE_BAD_PATH_REJECTED: u32 = 0x4849_004b;
+#[cfg(all(
+    target_arch = "arm",
+    target_os = "none",
+    feature = "baker-choreofs-bad-payload-demo"
+))]
+const STAGE_CHOREOFS_BAD_PAYLOAD_REJECTED: u32 = 0x4849_004c;
+#[cfg(all(
+    target_arch = "arm",
+    target_os = "none",
+    feature = "baker-choreofs-wrong-object-demo"
+))]
+const STAGE_WRONG_OBJECT_REJECTED: u32 = 0x4849_004d;
 #[cfg(all(target_arch = "arm", target_os = "none"))]
-const SLAB_BYTES: usize = 128 * 1024;
+const STAGE_ENGINE_TRAP_PATH_OPEN: u32 = 0x4849_0050;
 #[cfg(all(target_arch = "arm", target_os = "none"))]
-const TEST_MEMORY_LEN: u32 = 4096;
+const STAGE_ENGINE_PATH_OPEN_BEGIN: u32 = 0x4849_0051;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const STAGE_ENGINE_PATH_OPEN_BORROW_SENT: u32 = 0x4849_0052;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const STAGE_ENGINE_PATH_OPEN_GRANT_RECV: u32 = 0x4849_0053;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const STAGE_ENGINE_PATH_OPEN_PATH_DECODED: u32 = 0x4849_0054;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const STAGE_ENGINE_PATH_OPEN_REQ_SENT: u32 = 0x4849_0055;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const STAGE_ENGINE_PATH_OPEN_RET_RECV: u32 = 0x4849_0056;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const STAGE_ENGINE_PATH_OPEN_RELEASE_SENT: u32 = 0x4849_0057;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const STAGE_ENGINE_PATH_OPEN_COMPLETED: u32 = 0x4849_0058;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const STAGE_KERNEL_PATH_OPEN_BORROW_RECV: u32 = 0x4849_0060;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const STAGE_KERNEL_PATH_OPEN_GRANT_SENT: u32 = 0x4849_0061;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const STAGE_KERNEL_PATH_OPEN_REQ_RECV: u32 = 0x4849_0062;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const STAGE_KERNEL_PATH_OPEN_OBJECT_OPENED: u32 = 0x4849_0063;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const STAGE_KERNEL_PATH_OPEN_RET_SENT: u32 = 0x4849_0064;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const STAGE_KERNEL_PATH_OPEN_RELEASE_RECV: u32 = 0x4849_0065;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const SLAB_BYTES: usize = 124 * 1024;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const TEST_MEMORY_LEN: u32 = 64 * 1024;
 #[cfg(all(target_arch = "arm", target_os = "none"))]
 const TEST_MEMORY_EPOCH: u32 = 1;
 #[cfg(all(target_arch = "arm", target_os = "none"))]
@@ -274,6 +453,23 @@ type GpioEndpoint = Endpoint<'static, 2>;
 #[cfg(all(target_arch = "arm", target_os = "none"))]
 type TimerEndpoint = Endpoint<'static, 3>;
 #[cfg(all(target_arch = "arm", target_os = "none"))]
+#[cfg(any(
+    feature = "baker-choreofs-demo",
+    feature = "baker-choreofs-bad-path-demo",
+    feature = "baker-choreofs-bad-payload-demo",
+    feature = "baker-choreofs-wrong-object-demo"
+))]
+type BakerLedger = GuestLedger<4, 1, 1>;
+#[cfg(all(
+    target_arch = "arm",
+    target_os = "none",
+    not(any(
+        feature = "baker-choreofs-demo",
+        feature = "baker-choreofs-bad-path-demo",
+        feature = "baker-choreofs-bad-payload-demo",
+        feature = "baker-choreofs-wrong-object-demo"
+    ))
+))]
 type BakerLedger = GuestLedger<3, 1, 1>;
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]
@@ -281,6 +477,10 @@ type BakerLedger = GuestLedger<3, 1, 1>;
     feature = "baker-bad-order-demo",
     feature = "baker-chaser-demo",
     feature = "baker-ordinary-std-demo",
+    feature = "baker-choreofs-demo",
+    feature = "baker-choreofs-bad-path-demo",
+    feature = "baker-choreofs-bad-payload-demo",
+    feature = "baker-choreofs-wrong-object-demo",
     feature = "baker-invalid-fd-demo",
     feature = "baker-bad-payload-demo"
 )))]
@@ -317,6 +517,30 @@ static WASIP1_LED_GUEST: &[u8] = include_bytes!(concat!(
 static WASIP1_LED_GUEST: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/target/wasip1-apps/wasm32-wasip1/release/wasip1-led-ordinary-std-chaser.wasm"
+));
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+#[cfg(feature = "baker-choreofs-demo")]
+static WASIP1_LED_GUEST: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/target/wasip1-apps/wasm32-wasip1/release/wasip1-led-choreofs-open.wasm"
+));
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+#[cfg(feature = "baker-choreofs-bad-path-demo")]
+static WASIP1_LED_GUEST: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/target/wasip1-apps/wasm32-wasip1/release/wasip1-led-choreofs-bad-path.wasm"
+));
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+#[cfg(feature = "baker-choreofs-bad-payload-demo")]
+static WASIP1_LED_GUEST: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/target/wasip1-apps/wasm32-wasip1/release/wasip1-led-choreofs-bad-payload.wasm"
+));
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+#[cfg(feature = "baker-choreofs-wrong-object-demo")]
+static WASIP1_LED_GUEST: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/target/wasip1-apps/wasm32-wasip1/release/wasip1-led-choreofs-wrong-object.wasm"
 ));
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]
@@ -499,13 +723,53 @@ fn fail_closed(stage: &str) -> ! {
     park();
 }
 
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+fn fail_at(marker: u32, stage: &str) -> ! {
+    unsafe {
+        write_volatile(core::ptr::addr_of_mut!(HIBANA_DEMO_FAILURE_STAGE), marker);
+    }
+    mark_stage(RESULT_FAILURE);
+    uart::write_bytes(stage.as_bytes());
+    uart::write_bytes(b" fail\n");
+    park();
+}
+
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+fn fail_wasm_resume(error: WasmError) -> ! {
+    let stage = match error {
+        WasmError::Truncated => STAGE_ENGINE_RESUME_ERR_TRUNCATED,
+        WasmError::Invalid(_) => STAGE_ENGINE_RESUME_ERR_INVALID,
+        WasmError::Unsupported(_) => STAGE_ENGINE_RESUME_ERR_UNSUPPORTED,
+        WasmError::UnsupportedOpcode(opcode) => {
+            STAGE_ENGINE_RESUME_ERR_OPCODE_BASE | u32::from(opcode)
+        }
+        WasmError::StackOverflow => STAGE_ENGINE_RESUME_ERR_STACK_OVERFLOW,
+        WasmError::StackUnderflow => STAGE_ENGINE_RESUME_ERR_STACK_UNDERFLOW,
+        WasmError::PendingHostCall => STAGE_ENGINE_RESUME_ERR_PENDING,
+        WasmError::ReplyWithoutPending | WasmError::UnexpectedReply => {
+            STAGE_ENGINE_RESUME_ERR_REPLY
+        }
+        WasmError::Trap => STAGE_ENGINE_RESUME_ERR_TRAP,
+        WasmError::FuelExhausted => STAGE_ENGINE_RESUME_ERR_FUEL,
+    };
+    unsafe {
+        write_volatile(core::ptr::addr_of_mut!(HIBANA_DEMO_FAILURE_STAGE), stage);
+    }
+    mark_stage(RESULT_FAILURE);
+    uart::write_bytes(b"[core1] resume core wasip1 traffic guest fail\n");
+    park();
+}
+
 #[cfg(all(
     target_arch = "arm",
     target_os = "none",
     any(
         feature = "baker-bad-order-demo",
         feature = "baker-invalid-fd-demo",
-        feature = "baker-bad-payload-demo"
+        feature = "baker-bad-payload-demo",
+        feature = "baker-choreofs-bad-path-demo",
+        feature = "baker-choreofs-bad-payload-demo",
+        feature = "baker-choreofs-wrong-object-demo"
     )
 ))]
 fn expected_reject(stage: u32) -> ! {
@@ -529,6 +793,18 @@ fn handle_gpio_fd_write_error(error: GpioFdWriteError) -> GpioSet {
     {
         if error == GpioFdWriteError::BadPayload {
             expected_reject(STAGE_BAD_PAYLOAD_REJECTED);
+        }
+    }
+    #[cfg(feature = "baker-choreofs-bad-payload-demo")]
+    {
+        if error == GpioFdWriteError::BadPayload {
+            expected_reject(STAGE_CHOREOFS_BAD_PAYLOAD_REJECTED);
+        }
+    }
+    #[cfg(feature = "baker-choreofs-wrong-object-demo")]
+    {
+        if error == GpioFdWriteError::Fd(hibana_pico::kernel::wasi::PicoFdError::WrongResource) {
+            expected_reject(STAGE_WRONG_OBJECT_REJECTED);
         }
     }
     let _ = error;
@@ -680,6 +956,20 @@ fn init_runtime_once() {
         };
         mark_stage(STAGE_RENDEZVOUS_READY);
         let sid = SessionId::new(10);
+        #[cfg(any(
+            feature = "baker-choreofs-demo",
+            feature = "baker-choreofs-bad-path-demo",
+            feature = "baker-choreofs-bad-payload-demo",
+            feature = "baker-choreofs-wrong-object-demo"
+        ))]
+        let (core0_program, core1_program, core2_program, core3_program) =
+            baker_led_choreofs_blink_roles();
+        #[cfg(not(any(
+            feature = "baker-choreofs-demo",
+            feature = "baker-choreofs-bad-path-demo",
+            feature = "baker-choreofs-bad-payload-demo",
+            feature = "baker-choreofs-wrong-object-demo"
+        )))]
         let (core0_program, core1_program, core2_program, core3_program) = baker_led_blink_roles();
         mark_stage(STAGE_PROGRAM_READY);
         if kit
@@ -823,7 +1113,11 @@ async fn kernel_fd_write(
 ) {
     mark_stage(STAGE_KERNEL_FD_WRITE_BEGIN);
     mark_stage(STAGE_KERNEL_FD_WRITE_BORROW_RECV);
-    if borrow.ptr() != TEST_LED_PTR || borrow.len() != 1 || borrow.epoch() != TEST_MEMORY_EPOCH {
+    if borrow.ptr() != TEST_LED_PTR
+        || borrow.len() == 0
+        || borrow.len() as usize > WASIP1_STREAM_CHUNK_CAPACITY
+        || borrow.epoch() != TEST_MEMORY_EPOCH
+    {
         fail_closed("[core0] led mem borrow mismatch");
     }
     let grant = ledger
@@ -848,10 +1142,10 @@ async fn kernel_fd_write(
     let EngineReq::FdWrite(write) = request else {
         fail_closed("[core0] expected led fd_write");
     };
-    if write.len() != 1 || ledger.validate_fd_write_lease(&write, grant).is_err() {
+    if ledger.validate_fd_write_lease(&write, grant).is_err() {
         fail_closed("[core0] led fd_write lease mismatch");
     }
-    let set = resolve_gpio_fd_write(ledger.fd_view(), &write, baker_link_led_fd_write_route())
+    let set = check_gpio_object_fd_write(ledger.fd_view(), &write, baker_link_led_fd_write_route())
         .unwrap_or_else(handle_gpio_fd_write_error);
     match endpoint
         .flow::<Msg<LABEL_GPIO_SET, GpioSet>>()
@@ -893,6 +1187,94 @@ async fn kernel_fd_write(
     ledger
         .release_lease(release)
         .unwrap_or_else(|_| fail_closed("[core0] release led lease"));
+}
+
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+async fn kernel_path_open(
+    endpoint: &mut KernelEndpoint,
+    ledger: &mut BakerLedger,
+    store: &BakerLinkLedResourceStore,
+    borrow: MemBorrow,
+) {
+    mark_stage(STAGE_KERNEL_PATH_OPEN_BORROW_RECV);
+    if borrow.len() == 0 || borrow.epoch() != TEST_MEMORY_EPOCH {
+        fail_closed("[core0] path_open borrow mismatch");
+    }
+    let grant = ledger
+        .grant_read_lease(borrow)
+        .unwrap_or_else(|_| fail_closed("[core0] grant path_open read lease"));
+    match endpoint
+        .flow::<MemReadGrantControl>()
+        .expect("kernel flow<path grant>")
+        .send(())
+        .await
+    {
+        Ok(_) => {}
+        Err(_) => fail_closed("[core0] send path_open mem grant"),
+    }
+    mark_stage(STAGE_KERNEL_PATH_OPEN_GRANT_SENT);
+
+    let request = match endpoint
+        .recv::<Msg<LABEL_WASI_PATH_OPEN, EngineReq>>()
+        .await
+    {
+        Ok(request) => request,
+        Err(_) => fail_closed("[core0] recv path_open"),
+    };
+    let EngineReq::PathOpen(open) = request else {
+        fail_closed("[core0] expected path_open");
+    };
+    mark_stage(STAGE_KERNEL_PATH_OPEN_REQ_RECV);
+    if open.preopen_fd() != BAKER_LINK_CHOREOFS_PREOPEN_FD
+        || open.lease_id() != grant.lease_id()
+        || open.len() > borrow.len() as usize
+    {
+        fail_closed("[core0] path_open lease mismatch");
+    }
+
+    let opened = match open_baker_link_choreofs_path(store, ledger, open.path(), open.rights_base())
+    {
+        Ok(opened) => opened,
+        Err(error) => {
+            handle_baker_choreofs_open_error(error);
+        }
+    };
+    mark_stage(STAGE_KERNEL_PATH_OPEN_OBJECT_OPENED);
+    let reply = EngineRet::PathOpened(PathOpened::new(opened.fd(), 0));
+    match endpoint
+        .flow::<Msg<LABEL_WASI_PATH_OPEN_RET, EngineRet>>()
+        .expect("kernel flow<path_open ret>")
+        .send(&reply)
+        .await
+    {
+        Ok(_) => {}
+        Err(_) => fail_closed("[core0] send path_open ret"),
+    }
+    mark_stage(STAGE_KERNEL_PATH_OPEN_RET_SENT);
+
+    let release = match endpoint.recv::<Msg<LABEL_MEM_RELEASE, MemRelease>>().await {
+        Ok(release) => release,
+        Err(_) => fail_closed("[core0] recv path_open mem release"),
+    };
+    mark_stage(STAGE_KERNEL_PATH_OPEN_RELEASE_RECV);
+    if release.lease_id() != grant.lease_id() {
+        fail_closed("[core0] path_open release mismatch");
+    }
+    ledger
+        .release_lease(release)
+        .unwrap_or_else(|_| fail_closed("[core0] release path_open lease"));
+}
+
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+fn handle_baker_choreofs_open_error(error: ChoreoFsError) -> ! {
+    #[cfg(feature = "baker-choreofs-bad-path-demo")]
+    {
+        if matches!(error, ChoreoFsError::NotFound | ChoreoFsError::AbsolutePath) {
+            expected_reject(STAGE_BAD_PATH_REJECTED);
+        }
+    }
+    let _ = error;
+    fail_closed("[core0] resolve path_open");
 }
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]
@@ -971,12 +1353,51 @@ async fn kernel_session(
     gpio_endpoint: &mut GpioEndpoint,
     timer_endpoint: &mut TimerEndpoint,
 ) {
-    let mut ledger = baker_link_pico_min_ledger::<1, 1>(TEST_MEMORY_LEN, TEST_MEMORY_EPOCH)
-        .unwrap_or_else(|_| fail_closed("[core0] create baker pico-min ledger"));
+    #[cfg(any(
+        feature = "baker-choreofs-demo",
+        feature = "baker-choreofs-bad-path-demo",
+        feature = "baker-choreofs-bad-payload-demo",
+        feature = "baker-choreofs-wrong-object-demo"
+    ))]
+    let store = baker_link_led_resource_store()
+        .unwrap_or_else(|_| fail_closed("[core0] create baker choreofs store"));
+    #[cfg(any(
+        feature = "baker-choreofs-demo",
+        feature = "baker-choreofs-bad-path-demo",
+        feature = "baker-choreofs-bad-payload-demo",
+        feature = "baker-choreofs-wrong-object-demo"
+    ))]
+    let mut ledger =
+        baker_link_choreofs_ledger::<4, 1, 1>(&store, TEST_MEMORY_LEN, TEST_MEMORY_EPOCH)
+            .unwrap_or_else(|_| fail_closed("[core0] create baker choreofs ledger"));
+    #[cfg(not(any(
+        feature = "baker-choreofs-demo",
+        feature = "baker-choreofs-bad-path-demo",
+        feature = "baker-choreofs-bad-payload-demo",
+        feature = "baker-choreofs-wrong-object-demo"
+    )))]
+    let mut ledger = hibana_pico::machine::rp2040::baker_link::baker_link_pico_min_ledger::<1, 1>(
+        TEST_MEMORY_LEN,
+        TEST_MEMORY_EPOCH,
+    )
+    .unwrap_or_else(|_| fail_closed("[core0] create baker pico-min ledger"));
     let mut resolver: PicoInterruptResolver<2, 4, 1> = PicoInterruptResolver::new();
 
     let activation_id = 0u16;
     kernel_start_app_activation(endpoint, activation_id, 0).await;
+    #[cfg(any(
+        feature = "baker-choreofs-demo",
+        feature = "baker-choreofs-bad-path-demo",
+        feature = "baker-choreofs-bad-payload-demo",
+        feature = "baker-choreofs-wrong-object-demo"
+    ))]
+    for _ in 0..3 {
+        let borrow = endpoint
+            .recv::<Msg<LABEL_MEM_BORROW_READ, MemBorrow>>()
+            .await
+            .unwrap_or_else(|_| fail_closed("[core0] recv path_open mem borrow"));
+        kernel_path_open(endpoint, &mut ledger, &store, borrow).await;
+    }
     let mut step = 0usize;
     let mut tick = 0u64;
     loop {
@@ -1006,21 +1427,21 @@ async fn kernel_session(
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]
 async fn kernel_start_app_activation(endpoint: &mut KernelEndpoint, activation_id: u16, tick: u64) {
+    mark_stage(STAGE_KERNEL_RUN_SEND_BEGIN);
     let run = BudgetRun::new(
         activation_id,
         1,
         BAKER_LINK_TRAFFIC_LIGHT_PATTERN_STEPS as u32,
         tick,
     );
-    match endpoint
+    let flow = endpoint
         .flow::<BudgetRunMsg>()
-        .expect("kernel flow<traffic run>")
-        .send(&run)
-        .await
-    {
+        .unwrap_or_else(|_| fail_at(STAGE_KERNEL_RUN_FLOW_ERR, "[core0] flow traffic run"));
+    match flow.send(&run).await {
         Ok(_) => {}
-        Err(_) => fail_closed("[core0] send traffic run"),
+        Err(_) => fail_at(STAGE_KERNEL_RUN_SEND_ERR, "[core0] send traffic run"),
     }
+    mark_stage(STAGE_KERNEL_RUN_SEND_DONE);
 }
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]
@@ -1039,7 +1460,8 @@ async fn kernel_next_app_step_or_exit(endpoint: &mut KernelEndpoint) -> Option<M
                 Err(_) => fail_closed("[core0] decode next mem borrow"),
             };
             if borrow.ptr() != TEST_LED_PTR
-                || borrow.len() != 1
+                || borrow.len() == 0
+                || borrow.len() as usize > WASIP1_STREAM_CHUNK_CAPACITY
                 || borrow.epoch() != TEST_MEMORY_EPOCH
             {
                 fail_closed("[core0] next mem borrow mismatch");
@@ -1183,16 +1605,115 @@ fn engine_expect_poll_oneoff_rejected(endpoint: &mut EngineEndpoint) -> ! {
 }
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]
+async fn engine_path_open(
+    endpoint: &mut EngineEndpoint,
+    guest: &mut CoreWasip1Instance<'static>,
+    call: CoreWasip1PathCall,
+) {
+    mark_stage(STAGE_ENGINE_PATH_OPEN_BEGIN);
+    if call.kind() != CoreWasip1PathKind::PathOpen {
+        fail_closed("[core1] expected path_open");
+    }
+    let ptr = call
+        .arg_i32(2)
+        .unwrap_or_else(|_| fail_closed("[core1] path_open ptr"));
+    let len = call
+        .arg_i32(3)
+        .unwrap_or_else(|_| fail_closed("[core1] path_open len"));
+    if len > u8::MAX as u32 {
+        fail_closed("[core1] path_open path too long");
+    }
+    let preopen_fd = call
+        .fd()
+        .unwrap_or_else(|_| fail_closed("[core1] path_open preopen fd"));
+    let rights_base = call
+        .arg_i64(5)
+        .unwrap_or_else(|_| fail_closed("[core1] path_open rights"));
+
+    let borrow = MemBorrow::new(ptr, len as u8, TEST_MEMORY_EPOCH);
+    match endpoint
+        .flow::<Msg<LABEL_MEM_BORROW_READ, MemBorrow>>()
+        .expect("engine flow<path borrow>")
+        .send(&borrow)
+        .await
+    {
+        Ok(_) => {}
+        Err(_) => fail_closed("[core1] send path_open mem borrow"),
+    }
+    mark_stage(STAGE_ENGINE_PATH_OPEN_BORROW_SENT);
+    let grant = match endpoint.recv::<MemReadGrantControl>().await {
+        Ok(grant) => grant,
+        Err(_) => fail_closed("[core1] recv path_open mem grant"),
+    };
+    mark_stage(STAGE_ENGINE_PATH_OPEN_GRANT_RECV);
+    let (rights, lease_id) = grant
+        .decode_handle()
+        .unwrap_or_else(|_| fail_closed("[core1] decode path_open mem grant"));
+    if rights != MemRights::Read.tag() || lease_id > u8::MAX as u64 {
+        fail_closed("[core1] path_open grant mismatch");
+    }
+
+    let path = guest
+        .path_bytes(call)
+        .unwrap_or_else(|_| fail_closed("[core1] decode path_open path"));
+    mark_stage(STAGE_ENGINE_PATH_OPEN_PATH_DECODED);
+    let request = EngineReq::PathOpen(
+        PathOpen::new(preopen_fd, lease_id as u8, rights_base, path.as_bytes())
+            .unwrap_or_else(|_| fail_closed("[core1] make path_open request")),
+    );
+    match endpoint
+        .flow::<Msg<LABEL_WASI_PATH_OPEN, EngineReq>>()
+        .expect("engine flow<path_open>")
+        .send(&request)
+        .await
+    {
+        Ok(_) => {}
+        Err(_) => fail_closed("[core1] send path_open"),
+    }
+    mark_stage(STAGE_ENGINE_PATH_OPEN_REQ_SENT);
+    let reply = match endpoint
+        .recv::<Msg<LABEL_WASI_PATH_OPEN_RET, EngineRet>>()
+        .await
+    {
+        Ok(reply) => reply,
+        Err(_) => fail_closed("[core1] recv path_open ret"),
+    };
+    let EngineRet::PathOpened(opened) = reply else {
+        fail_closed("[core1] expected path_open ret");
+    };
+    mark_stage(STAGE_ENGINE_PATH_OPEN_RET_RECV);
+
+    let release = MemRelease::new(lease_id as u8);
+    match endpoint
+        .flow::<Msg<LABEL_MEM_RELEASE, MemRelease>>()
+        .expect("engine flow<path release>")
+        .send(&release)
+        .await
+    {
+        Ok(_) => {}
+        Err(_) => fail_closed("[core1] send path_open mem release"),
+    }
+    mark_stage(STAGE_ENGINE_PATH_OPEN_RELEASE_SENT);
+
+    guest
+        .complete_path_open(call, opened.fd() as u32, opened.errno() as u32)
+        .unwrap_or_else(|_| fail_closed("[core1] complete path_open"));
+    mark_stage(STAGE_ENGINE_PATH_OPEN_COMPLETED);
+}
+
+#[cfg(all(target_arch = "arm", target_os = "none"))]
 async fn engine_session(endpoint: &mut EngineEndpoint, guest: &mut CoreWasip1Instance<'static>) {
     #[cfg(not(feature = "baker-bad-order-demo"))]
     let mut tick = 0u64;
     engine_recv_traffic_run(endpoint, 0).await;
     loop {
-        match guest
-            .resume()
-            .unwrap_or_else(|_| fail_closed("[core1] resume core wasip1 traffic guest"))
-        {
+        let trap = match guest.resume() {
+            Ok(trap) => trap,
+            Err(error) => fail_wasm_resume(error),
+        };
+        match trap {
             CoreWasip1Trap::FdWrite(call) => {
+                mark_stage(STAGE_ENGINE_TRAP_FD_WRITE);
                 engine_continue_traffic_loop(endpoint).await;
                 let payload = guest
                     .fd_write_payload(call)
@@ -1203,6 +1724,7 @@ async fn engine_session(endpoint: &mut EngineEndpoint, guest: &mut CoreWasip1Ins
                     .unwrap_or_else(|_| fail_closed("[core1] complete wasip1 fd_write"));
             }
             CoreWasip1Trap::PollOneoff(call) => {
+                mark_stage(STAGE_ENGINE_TRAP_POLL_ONEOFF);
                 let delay_ticks = guest
                     .poll_oneoff_delay_ticks(call)
                     .unwrap_or_else(|_| fail_closed("[core1] decode wasip1 poll_oneoff"));
@@ -1229,15 +1751,35 @@ async fn engine_session(endpoint: &mut EngineEndpoint, guest: &mut CoreWasip1Ins
             | CoreWasip1Trap::ClockTimeGet(_)
             | CoreWasip1Trap::RandomGet(_)
             | CoreWasip1Trap::SchedYield
-            | CoreWasip1Trap::PathMinimal(_)
             | CoreWasip1Trap::PathFull(_)
             | CoreWasip1Trap::Socket(_)
-            | CoreWasip1Trap::ArgsSizesGet(_)
-            | CoreWasip1Trap::ArgsGet(_)
-            | CoreWasip1Trap::EnvironSizesGet(_)
-            | CoreWasip1Trap::EnvironGet(_)
             | CoreWasip1Trap::ProcRaise(_) => {
-                fail_closed("[core1] unsupported wasip1 syscall in baker-min profile");
+                mark_stage(STAGE_ENGINE_TRAP_UNSUPPORTED);
+                fail_closed("[core1] unsupported wasip1 syscall in pico-min profile");
+            }
+            CoreWasip1Trap::PathMinimal(call) => {
+                mark_stage(STAGE_ENGINE_TRAP_PATH_OPEN);
+                engine_path_open(endpoint, guest, call).await;
+            }
+            CoreWasip1Trap::ArgsSizesGet(call) => {
+                mark_stage(STAGE_ENGINE_TRAP_ARGS_SIZES);
+                let _ = call;
+                fail_closed("[core1] unexpected args_sizes_get in Baker profile");
+            }
+            CoreWasip1Trap::ArgsGet(call) => {
+                mark_stage(STAGE_ENGINE_TRAP_ARGS_GET);
+                let _ = call;
+                fail_closed("[core1] unexpected args_get in Baker profile");
+            }
+            CoreWasip1Trap::EnvironSizesGet(call) => {
+                mark_stage(STAGE_ENGINE_TRAP_ENVIRON_SIZES);
+                let _ = call;
+                fail_closed("[core1] unexpected environ_sizes_get in Baker choreography");
+            }
+            CoreWasip1Trap::EnvironGet(call) => {
+                mark_stage(STAGE_ENGINE_TRAP_ENVIRON_GET);
+                let _ = call;
+                fail_closed("[core1] unexpected environ_get in Baker choreography");
             }
             CoreWasip1Trap::ProcExit(status) => {
                 if status > u8::MAX as u32 {
@@ -1248,7 +1790,8 @@ async fn engine_session(endpoint: &mut EngineEndpoint, guest: &mut CoreWasip1Ins
                 break;
             }
             CoreWasip1Trap::MemoryGrow(_) => {
-                fail_closed("[core1] unexpected memory.grow in baker-min profile");
+                mark_stage(STAGE_ENGINE_TRAP_MEMORY_GROW);
+                fail_closed("[core1] unexpected memory.grow in pico-min profile");
             }
             CoreWasip1Trap::Done => {
                 engine_break_traffic_loop(endpoint).await;
@@ -1304,16 +1847,18 @@ async fn engine_proc_exit(endpoint: &mut EngineEndpoint, code: u8) {
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]
 async fn engine_recv_traffic_run(endpoint: &mut EngineEndpoint, expected_cycle: u16) {
+    mark_stage(STAGE_ENGINE_RUN_RECV_BEGIN);
     let run = match endpoint.recv::<BudgetRunMsg>().await {
         Ok(run) => run,
-        Err(_) => fail_closed("[core1] recv traffic run"),
+        Err(_) => fail_at(STAGE_ENGINE_RUN_RECV_ERR, "[core1] recv traffic run"),
     };
     if run.run_id() != expected_cycle
         || run.generation() != 1
         || run.fuel() != BAKER_LINK_TRAFFIC_LIGHT_PATTERN_STEPS as u32
     {
-        fail_closed("[core1] traffic run mismatch");
+        fail_at(STAGE_ENGINE_RUN_MISMATCH, "[core1] traffic run mismatch");
     }
+    mark_stage(STAGE_ENGINE_RUN_RECV_DONE);
 }
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]
@@ -1354,13 +1899,29 @@ fn core1_main() -> ! {
     let guest_slot = unsafe { &mut (*shared_runtime_ptr()).core1_guest };
     let guest = CoreWasip1Instance::write_new_in_place(
         WASIP1_LED_GUEST,
-        Wasip1HandlerSet::BAKER_MIN,
+        baker_wasip1_handler_set(),
         guest_slot,
     )
     .unwrap_or_else(|_| fail_closed("[core1] instantiate core wasip1 traffic guest"));
     mark_stage(STAGE_ENGINE_PARSE_DONE);
     run_current_task(engine_session(endpoint, guest));
     park();
+}
+
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+const fn baker_wasip1_handler_set() -> Wasip1HandlerSet {
+    if cfg!(any(
+        feature = "baker-choreofs-demo",
+        feature = "baker-choreofs-bad-path-demo",
+        feature = "baker-choreofs-bad-payload-demo",
+        feature = "baker-choreofs-wrong-object-demo"
+    )) {
+        Wasip1HandlerSet::PICO_STD_CHOREOFS
+    } else if cfg!(feature = "baker-ordinary-std-demo") {
+        Wasip1HandlerSet::PICO_STD_START
+    } else {
+        Wasip1HandlerSet::PICO_MIN
+    }
 }
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]

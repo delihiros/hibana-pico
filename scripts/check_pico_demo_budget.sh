@@ -61,7 +61,7 @@ BUILD_ARGS=(
   --release
   --target "$TARGET"
   --target-dir "$TARGET_DIR"
-  --features "profile-rp2040-baker-min"
+  --features "profile-rp2040-pico-min"
 )
 
 for bin in "${BINS[@]}"; do

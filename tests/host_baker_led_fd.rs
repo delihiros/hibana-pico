@@ -33,7 +33,7 @@ use hibana_pico::{
         UartWriteDone,
     },
     kernel::device::{gpio::GpioStateTable, uart::UartTxLog},
-    kernel::fd_resolver::{GpioFdWriteError, resolve_gpio_fd_write},
+    kernel::fd_object::{GpioFdWriteError, check_gpio_object_fd_write},
     kernel::guest_ledger::GuestLedger,
     kernel::resolver::{
         BakerTrafficLoopResolver, InterruptEvent, PicoInterruptResolver, ResolvedInterrupt,
@@ -189,7 +189,7 @@ async fn exchange_linear_led_write<const ROLE: u8>(
     ledger
         .validate_fd_write_lease(&write, grant)
         .expect("ledger validates fd_write lease");
-    let set = resolve_gpio_fd_write(ledger.fd_view(), &write, baker_link_led_fd_write_route())
+    let set = check_gpio_object_fd_write(ledger.fd_view(), &write, baker_link_led_fd_write_route())
         .expect("route led fd");
     (kernel
         .flow::<Msg<LABEL_GPIO_SET, GpioSet>>()
@@ -319,7 +319,7 @@ async fn exchange_policy_entry_led_write<const ROLE: u8>(
         .validate_fd_write_lease(&write, grant)
         .expect("ledger validates fd_write lease");
 
-    let set = resolve_gpio_fd_write(ledger.fd_view(), &write, baker_link_led_fd_write_route())
+    let set = check_gpio_object_fd_write(ledger.fd_view(), &write, baker_link_led_fd_write_route())
         .expect("route led fd");
     (kernel
         .flow::<Msg<LABEL_GPIO_SET, GpioSet>>()
@@ -655,7 +655,7 @@ async fn run_baker_wasip1_pattern(
     let mut tick = 0u64;
     let wasip1_guest = wasip1_artifact(artifact_name);
     exchange_app_activation_start(&mut kernel, &mut engine, 0, tick).await;
-    let mut guest = CoreWasip1Instance::new(&wasip1_guest, Wasip1HandlerSet::BAKER_MIN)
+    let mut guest = CoreWasip1Instance::new(&wasip1_guest, Wasip1HandlerSet::PICO_MIN)
         .unwrap_or_else(|error| {
             panic!("instantiate {artifact_name} through core wasip1: {error:?}")
         });
@@ -728,7 +728,7 @@ async fn run_baker_wasip1_pattern(
     exchange_wasip1_proc_exit(&mut kernel, &mut engine, 0).await;
 }
 
-async fn run_baker_wasip1_fd_resolver_reject(
+async fn run_baker_wasip1_fd_object_reject(
     artifact_name: &str,
     expected_fd: u8,
     expected_payload: &[u8],
@@ -738,7 +738,7 @@ async fn run_baker_wasip1_fd_resolver_reject(
     let backend = HostQueueBackend::new();
     let clock = CounterClock::new();
     let mut tap = [TapEvent::zero(); 128];
-    let mut slab = vec![0u8; 192 * 1024];
+    let mut slab = vec![0u8; 124 * 1024];
     let traffic_policy = BakerTrafficLoopResolver::new();
     let cluster = TestKit::new(&clock);
     let rv = cluster
@@ -763,7 +763,7 @@ async fn run_baker_wasip1_fd_resolver_reject(
 
     exchange_app_activation_start(&mut kernel, &mut engine, 0, 0).await;
     let artifact = wasip1_artifact(artifact_name);
-    let mut guest = CoreWasip1Instance::new(&artifact, Wasip1HandlerSet::BAKER_MIN)
+    let mut guest = CoreWasip1Instance::new(&artifact, Wasip1HandlerSet::PICO_MIN)
         .unwrap_or_else(|error| panic!("instantiate {artifact_name}: {error:?}"));
 
     let CoreWasip1Trap::FdWrite(call) = guest.resume().expect("guest reaches first fd_write")
@@ -833,15 +833,15 @@ async fn run_baker_wasip1_fd_resolver_reject(
         .validate_fd_write_lease(&write, grant)
         .expect("bad led write still has a valid lease");
     assert_eq!(
-        resolve_gpio_fd_write(ledger.fd_view(), &write, baker_link_led_fd_write_route()),
+        check_gpio_object_fd_write(ledger.fd_view(), &write, baker_link_led_fd_write_route()),
         Err(expected_error),
-        "{artifact_name} must fail at fd resolver, not at choreography order or memory lease"
+        "{artifact_name} must fail at fd object fact check, not at choreography order or memory lease"
     );
 
     let mut pending_gpio = gpio.offer();
     assert!(
         matches!(poll_once(&mut pending_gpio), Poll::Pending),
-        "fd resolver rejection must not create hidden GPIO role progress"
+        "fd object rejection must not create hidden GPIO role progress"
     );
 }
 
@@ -1125,7 +1125,7 @@ fn baker_link_led_blink_uses_timer_resolver_between_fd_writes() {
 #[test]
 fn baker_link_no_main_wasip1_app_runs_on_core_wasip1_trampoline() {
     let artifact = wasip1_artifact("wasip1-led-blink");
-    let mut guest = CoreWasip1Instance::new(&artifact, Wasip1HandlerSet::BAKER_MIN)
+    let mut guest = CoreWasip1Instance::new(&artifact, Wasip1HandlerSet::PICO_MIN)
         .expect("instantiate no_main app through core wasip1 trampoline");
     let CoreWasip1Trap::FdWrite(write) = guest.resume().expect("first core fd_write") else {
         panic!("expected fd_write import trap from no_main artifact");
@@ -1155,7 +1155,7 @@ fn baker_link_chaser_wasip1_app_changes_fd_order_without_choreography_changes() 
 }
 
 #[test]
-fn baker_link_ordinary_std_wasip1_app_is_host_full_profile_artifact() {
+fn baker_link_ordinary_std_wasip1_app_is_rust_std_artifact_and_not_pico_min() {
     let artifact = wasip1_artifact("wasip1-led-ordinary-std-chaser");
     assert!(
         artifact
@@ -1170,13 +1170,14 @@ fn baker_link_ordinary_std_wasip1_app_is_host_full_profile_artifact() {
         "ordinary std execution must not depend on a traffic marker"
     );
     assert!(
-        CoreWasip1Instance::new(&artifact, Wasip1HandlerSet::BAKER_MIN).is_err(),
-        "ordinary std artifact is intentionally outside the baker-min embedded profile"
+        CoreWasip1Instance::new(&artifact, Wasip1HandlerSet::PICO_MIN).is_err(),
+        "ordinary std artifact must not be accepted by the minimal no-startup profile"
     );
 }
 
 #[test]
-fn baker_link_ordinary_std_wasip1_app_keeps_full_profile_import_surface() {
+#[cfg(feature = "wasm-engine-wasip1-std-profile")]
+fn baker_link_ordinary_std_wasip1_app_fits_embedded_std_start_profile_when_sized() {
     let artifact = wasip1_artifact("wasip1-led-ordinary-std-chaser");
     for needle in [
         b"fd_write".as_slice(),
@@ -1201,18 +1202,81 @@ fn baker_link_ordinary_std_wasip1_app_keeps_full_profile_import_surface() {
         "ordinary std artifact must keep at least one Rust std startup environment import"
     );
     assert!(
-        CoreWasip1Instance::new(&artifact, Wasip1HandlerSet::BAKER_MIN).is_err(),
-        "ordinary std artifact must not be accepted by the baker-min import/memory profile"
+        CoreWasip1Instance::new(&artifact, Wasip1HandlerSet::PICO_MIN).is_err(),
+        "ordinary std artifact must not be accepted by the minimal no-startup profile"
     );
+    let mut guest = CoreWasip1Instance::new(&artifact, Wasip1HandlerSet::PICO_STD_START)
+        .expect("64KiB ordinary Rust std WASI P1 artifact fits the embedded std-start profile");
+    let expected = baker_expected_chaser_steps();
+    let mut write_index = 0usize;
+    let mut poll_index = 0usize;
+    for _ in 0..64 {
+        match guest
+            .resume()
+            .expect("ordinary std embedded profile reaches typed import or done")
+        {
+            CoreWasip1Trap::EnvironSizesGet(call) => guest
+                .complete_environ_sizes_get(call, 0, 0, 0)
+                .expect("complete empty environ sizes"),
+            CoreWasip1Trap::EnvironGet(call) => guest
+                .complete_environ_get(call, &[], 0)
+                .expect("complete empty environ"),
+            CoreWasip1Trap::ArgsSizesGet(call) => guest
+                .complete_args_sizes_get(call, 0, 0, 0)
+                .expect("complete empty args sizes"),
+            CoreWasip1Trap::ArgsGet(call) => guest
+                .complete_args_get(call, &[], 0)
+                .expect("complete empty args"),
+            CoreWasip1Trap::FdWrite(call) => {
+                let payload = guest.fd_write_payload(call).expect("ordinary std fd_write");
+                let expected_step = expected
+                    .get(write_index)
+                    .copied()
+                    .expect("ordinary std emitted too many fd_write calls");
+                assert_eq!(call.fd(), expected_step.fd);
+                assert_eq!(payload.as_bytes(), &[expected_step.payload]);
+                guest
+                    .complete_fd_write(call, 0)
+                    .expect("complete ordinary std fd_write");
+                write_index += 1;
+            }
+            CoreWasip1Trap::PollOneoff(call) => {
+                let delay = guest
+                    .poll_oneoff_delay_ticks(call)
+                    .expect("ordinary std poll_oneoff delay");
+                let expected_step = expected
+                    .get(poll_index)
+                    .copied()
+                    .expect("ordinary std emitted too many poll_oneoff calls");
+                assert_eq!(delay, expected_step.delay_ticks);
+                guest
+                    .complete_poll_oneoff(call, 1, 0)
+                    .expect("complete ordinary std poll_oneoff");
+                poll_index += 1;
+            }
+            CoreWasip1Trap::ProcExit(status) => {
+                assert_eq!(status, 0);
+                break;
+            }
+            CoreWasip1Trap::Done => break,
+            other => panic!("unexpected embedded ordinary std trap {other:?}"),
+        }
+    }
+    assert_eq!(write_index, expected.len());
+    assert_eq!(poll_index, expected.len());
 }
 
 #[test]
 fn baker_link_firmware_demo_uses_core_wasip1_not_tiny_fallback() {
     let source = include_str!("../src/projects/baker_link_led/main.rs");
-    assert!(source.contains("CoreWasip1Instance::new"));
+    assert!(source.contains("CoreWasip1Instance::write_new_in_place"));
     assert!(
         !source.contains("TinyWasip1TrafficLightInstance"),
         "Baker firmware demo must stay on the core WASI P1 engine path"
+    );
+    assert!(
+        !source.contains("complete_environ_get") && !source.contains("complete_environ_sizes_get"),
+        "Baker firmware must not complete unused std-start imports in an adapter side channel"
     );
 }
 
@@ -1471,7 +1535,7 @@ fn baker_link_bad_order_wasip1_poll_oneoff_is_rejected_before_fd_write_phase() {
 
         exchange_app_activation_start(&mut kernel, &mut engine, 0, 0).await;
         let bad_guest = wasip1_artifact("wasip1-led-bad-order");
-        let mut guest = CoreWasip1Instance::new(&bad_guest, Wasip1HandlerSet::BAKER_MIN)
+        let mut guest = CoreWasip1Instance::new(&bad_guest, Wasip1HandlerSet::PICO_MIN)
             .expect("instantiate bad-order core wasip1 traffic guest");
 
         let CoreWasip1Trap::PollOneoff(poll) =
@@ -1496,10 +1560,10 @@ fn baker_link_bad_order_wasip1_poll_oneoff_is_rejected_before_fd_write_phase() {
 }
 
 #[test]
-fn baker_link_invalid_fd_wasip1_app_is_rejected_by_fd_resolver_without_gpio_progress() {
+fn baker_link_invalid_fd_wasip1_app_is_rejected_by_fd_object_without_gpio_progress() {
     run_large_stack_test(|| {
         run_current_task(async {
-            run_baker_wasip1_fd_resolver_reject(
+            run_baker_wasip1_fd_object_reject(
                 "wasip1-led-invalid-fd",
                 6,
                 b"1",
@@ -1512,10 +1576,10 @@ fn baker_link_invalid_fd_wasip1_app_is_rejected_by_fd_resolver_without_gpio_prog
 }
 
 #[test]
-fn baker_link_bad_payload_wasip1_app_is_rejected_by_fd_resolver_without_gpio_progress() {
+fn baker_link_bad_payload_wasip1_app_is_rejected_by_fd_object_without_gpio_progress() {
     run_large_stack_test(|| {
         run_current_task(async {
-            run_baker_wasip1_fd_resolver_reject(
+            run_baker_wasip1_fd_object_reject(
                 "wasip1-led-bad-payload",
                 3,
                 b"2",

@@ -1,270 +1,346 @@
-# plan.md — Hibana/Pico Current Final Plan
+# plan.md -- Hibana/Pico Final Plan
 
-This document is the current plan, not a historical backlog. Old bring-up
-phases, temporary milestones, and compatibility names are intentionally removed.
-If a concept is not in this document, it is not part of the design.
+This document is normative.
+
+If a concept is not in this document, it is not part of Hibana/Pico.
+
+Hibana/Pico is not designed by adding runtime intelligence.
+Hibana/Pico is designed by deleting every runtime decision that hibana
+choreography can express.
 
 ## 0. Definition
 
-**Hibana/Pico** is a **choreographic WASI microkernel swarm**.
+**Hibana/Pico** is a choreographic WASI Preview 1 microkernel swarm for
+Raspberry Pi Pico-class boards.
 
-A single node runs ordinary WASI Preview 1 apps behind session-typed syscall,
-memory, device, timer, resolver, and resource protocols.
+It must run on:
 
-A swarm is a set of those nodes connected by substrate transport and composed by
-hibana choreography.
+```text
+Raspberry Pi Pico      / RP2040
+Raspberry Pi Pico W    / RP2040 + CYW43439
+Raspberry Pi Pico 2 W  / RP2350 + CYW43439
+```
 
-The final runtime shape is:
+It is:
+
+```text
+a no_std / no_alloc WASI P1 syscall-to-choreography runtime
+a node-local microkernel capsule
+a swarm substrate for remote object routing
+```
+
+It is not:
+
+```text
+a general Wasm runtime
+a POSIX OS
+a network stack
+a WASI Preview 2 runtime
+a bridge layer
+a relay layer
+```
+
+The only protocol specification source is:
+
+```text
+hibana choreography
+```
+
+## 1. Hibana-First Law
+
+If a fact can be expressed by hibana, it must be expressed by hibana.
+
+Hibana owns:
+
+```text
+global choreography
+role projection
+legal message order
+label legality
+branch / route structure
+loop continue / break structure
+affine control tokens
+capability control messages
+endpoint decode
+localside progression
+```
+
+Hibana/Pico must not reimplement these as:
+
+```text
+Rust state machines
+runtime protocol inference
+manual phase flags
+transport heuristics
+fallback loops
+shape-based request dispatch
+stringly route selection
+fd-number route selection
+board-specific protocol branches
+```
+
+The allowed localside vocabulary is:
+
+```text
+flow().send()
+recv()
+offer()
+decode()
+```
+
+If code outside hibana needs to know "what phase is legal next," the design is
+wrong.
+
+## 2. Pico Responsibility Law
+
+Hibana/Pico owns only what hibana cannot own:
+
+```text
+WASI P1 import trampoline
+bounded Wasm execution capacity
+GuestLedger fact storage
+memory lease table
+ChoreoFS object storage
+errno mapping
+pending syscall token table
+resolver readiness facts
+MMIO / GPIO / timer / UART
+CYW43439 reset / IRQ / gSPI / Wi-Fi byte movement
+transport byte framing
+firmware measurement gates
+```
+
+None of these may become protocol authority.
+
+They are implementation capacity behind hibana-projected roles.
+
+## 3. NodeCapsule
+
+A node is:
+
+```text
+NodeCapsule =
+  WASI P1 guest
+  + Engine
+  + GuestLedger
+  + Kernel
+  + ChoreoFS
+  + Resolver
+  + TransportPort
+```
+
+Each node owns its own:
+
+```text
+Wasm memory
+fd materialized view
+memory lease table
+pending syscall table
+object store
+resolver queue
+endpoint state
+transport port
+```
+
+Swarm nodes never share:
+
+```text
+memory
+fd tables
+leases
+pending tokens
+endpoint state
+kernel state
+object stores
+```
+
+Remote communication is always:
+
+```text
+Kernel_i <-> Kernel_j
+```
+
+over hibana messages carried as transport bytes.
+
+## 4. Runtime Shape
+
+A local syscall has this shape:
 
 ```text
 ordinary WASI P1 app
   -> WASI P1 import trampoline
   -> Engine role
-  -> composed hibana choreography
-  -> Kernel role
-  -> explicit route arm
-  -> local device / ChoreoFS object / remote object / network object
-  -> typed return or typed reject
+  -> hibana-projected Kernel role
+  -> explicit object route
+  -> local object / device / resolver fact
+  -> typed return / typed reject / ENOSYS / trap
 ```
 
-There is no independent `bridge` object.
-Core0 is not a relay.
-Core0 is a Kernel role in the composed choreography.
-
-The specification source is one thing:
+A remote object syscall has this shape:
 
 ```text
-choreography
+ordinary WASI P1 app on node A
+  -> Engine_A
+  -> Kernel_A
+  -> hibana message over byte transport
+  -> Kernel_B
+  -> object route on node B
+  -> Kernel_B
+  -> hibana message over byte transport
+  -> Kernel_A
+  -> Engine_A
 ```
 
-## 1. Constitution
+No remote node receives authority over local Wasm memory.
 
-Hibana/Pico deliberately excludes these runtime authority sources:
+Remote data is copied bytes under typed grants, generations, and choreography.
 
-```text
-WASI Preview 2
-WIT runtime
-Component Model loader
-WASI 0.3 async semantics
-P2 sockets/resources/streams
-hidden bridge objects
-hidden relay logic
-hidden scheduler fallback
-hidden network fallback
-```
+## 5. Authority Law
 
-The smallest vocabulary is:
-
-```text
-Guest:
-  fd, ptr, len, errno
-
-GuestLedger:
-  fd materialized view, memory lease, pending syscall token, quota, errno map
-
-Kernel:
-  choreography, endpoint, control message, route arm, resolver
-
-Resource:
-  ChoreoFS object
-
-Transport:
-  bytes only
-```
-
-Everything else is implementation capacity behind this vocabulary.
-
-## 2. Authority Law
-
-Runtime progress is legal only when all required typed facts intersect.
+Runtime progress is legal only when all required facts intersect:
 
 ```text
 projected phase accepts label
   + payload decodes
-  + control-message history materializes the fd view
-  + fd view points to a ChoreoFS object
-  + object kind selects an explicit route arm
-  + lease / generation / policy checks pass
-  + readiness evidence exists when required
+  + control-message history materializes fd view
+  + fd view names live object identity
+  + object generation matches
+  + explicit route arm exists
+  + memory lease matches when ptr/len is used
+  + pending token matches when async completion is used
+  + resolver fact exists when readiness is required
+  + policy admits operation
   + linked implementation capacity exists
   => progress
-
-any missing term
-  => typed reject / ENOSYS / trap / drop-by-policy
 ```
 
-The fd view is not authority. It is only a materialized local view of projected
-control messages.
-
-ChoreoFS is not authority. It stores resource identity, object generation, and
-bounded data. Choreography owns legal progress.
-
-Cargo features are not authority. They only add or remove implementation
-capacity.
-
-## 3. Current Implementation State
-
-The current tree has these non-historical implementation claims:
+Any missing fact gives:
 
 ```text
-hibana dependency:
-  uses hibana crate 0.2.0
-  does not edit ../hibana
-
-No-P2:
-  no wasm32-wasip2 runtime target
-  no WIT runtime
-  no Component Model loader
-  no P2 socket/resource/stream surface
-
-No-bridge:
-  no PicoBridge runtime object
-  no fd.is_remote relay path
-  no send_packet_to_remote semantic bypass
-
-WASI P1:
-  real Rust-built wasm32-wasip1 artifacts are used
-  wasm-engine-core is syscall-agnostic
-  PicoWasiImportTrampoline owns the WASI P1 import boundary
-  WASI P1 import trampoline maps enabled imports into typed EngineReq values
-  disabled imports fail closed
-  host/full profile admits the 46 Preview 1 imports at the surface
-
-Baker Link / RP2040:
-  traffic-light guest is a real WASI P1 artifact
-  fd_write drives GPIO through Engine -> Kernel -> GPIO choreography
-  poll_oneoff waits through Kernel -> Timer -> resolver choreography
-  bad syscall order rejects
-
-Memory:
-  pointer-backed syscalls use leases
-  memory.grow creates a fence
-  stale lease / stale memory generation rejects
-
-ChoreoFS:
-  path strings are selectors, not authority
-  path_open mints object fds through control-message history
-  StaticBlob / ConfigCell / AppendLog / ImageSlot / DirectoryView are bounded
-  host-backed storage is a backend for tests, not ambient host authority
-
-Network:
-  WASI P1 sock_* imports are ingress only
-  sock_send / sock_recv / sock_shutdown normalize into fd/object routes
-  sock_accept requires an explicit NetworkListener accept route
-  no P2 socket semantics exist
-
-Swarm:
-  one choreography connects coordinator/sensor/actuator/gateway flows
-  six-process QEMU swarm runner exists
-  remote sample, remote actuator, telemetry, network object, and management
-    phases are represented as ordinary hibana messages
-  nodes do not share memory
-
-CYW43439:
-  QEMU model and firmware artifact checks exist
-  CYW boot prefix is modeled as typed readiness before transport open
-  real Pico 2 W gSPI/Wi-Fi remains the main hardware boundary
+typed reject
+ENOSYS
+trap
+drop-by-policy
 ```
 
-## 4. No Bypass Path
-
-The main path must not rely on temporary or bypass wiring.
-
-The current critical path is real in these ways:
+Not authority:
 
 ```text
-WASI app:
-  built as wasm32-wasip1 artifact
-  executed by the core WASI P1 path
-  imports fd_write / poll_oneoff / path / sock / proc as Preview 1 imports
-
-Local side:
-  uses Endpoint flow().send(), recv(), offer(), decode()
-  does not mutate endpoint state by hand
-
-Resolver:
-  admits timer / GPIO / transport / budget readiness as facts
-  does not become protocol authority
-
-Swarm:
-  host/QEMU proofs use separate node state
-  payloads are copied bytes, not shared memory
+fd number
+path string
+network address
+transport packet
+label hint
+lane
+interrupt
+core id
+board type
+Cargo feature
 ```
 
-Historical bring-up demos may still exist as examples, but they are not the
-final proof target. The final proof target is ordinary WASI P1 app bytes wired
-through choreography.
+Only hibana choreography decides protocol legality.
 
-## 5. Feature Model
+Kernel does not decide what is legal.
+Kernel only checks whether the facts required by the currently projected hibana
+phase are present.
 
-Features are Cargo features only. They select implementation capacity.
+## 6. WASI P1 Law
 
-Important profile bundles:
+The guest may be:
 
 ```text
-profile-rp2040-baker-min:
-  platform-rp2040
-  machine-sio/timer/gpio/uart
-  wasm-engine-core
-  wasip1-sys-fd-write
-  wasip1-sys-poll-oneoff
-  wasip1-sys-proc-exit
-  wasip1-ctrl-common
-  wasip1-ledger-pico-min
-
-profile-pico2w-swarm-min:
-  platform-rp2350
-  machine-sio/timer/gpio/uart/cyw43439
-  wasm-engine-core
-  selected WASI P1 syscall handlers
-  wasip1-ctrl-common
-  swarm-frame / remote object / datagram object / management capacity
-
-profile-host-linux-wasip1-full:
-  platform-host-linux
-  wasm-engine-wasip1-full
-  wasip1-sys-full
-  wasip1-ctrl-common
-  wasip1-ledger-host-full
+Rust std
+no_std Rust
+C
+Zig
+TinyGo
+handwritten Wasm
 ```
 
-Feature law:
+The choreography does not care.
+
+The Engine sees only:
 
 ```text
-features may add or remove implementation bodies
-features may not change choreography meaning
-features may not change route labels
-features may not change role ids
-features may not make disabled syscalls succeed silently
+WASI P1 import -> EngineReq
+EngineRet -> WASI result / errno / trap
 ```
 
-## 6. WASI P1 Rule
+Disabled imports fail closed.
 
-The choreography side is app-agnostic.
+Unsupported imports fail closed.
 
-It does not care whether the guest app is Rust std, no_std Rust, C, Zig, TinyGo,
-or handwritten Wasm.
-
-It only sees the syscall/control message stream emitted by the engine/import
-trampoline.
+No import may:
 
 ```text
-valid app:
-  emits syscall/control messages in a legal projected phase
-  passes fd view / lease / pending / policy / resolver checks
-  progresses
-
-bad app:
-  emits syscall/control messages outside the projected phase
-  or uses stale fd/lease/pending/generation
-  or requests an unlinked/import-disabled syscall
-  rejects / traps / ENOSYS
+fake success
+choose a fallback route
+bypass GuestLedger
+bypass memory lease checks
+bypass projected choreography
 ```
 
-The app controls its own internal branch and loop. Hibana/Pico judges only the
-boundary stream.
+WASI Preview 2, WIT, Component Model, and P2 sockets/resources/streams are not
+part of the runtime.
 
-## 7. GuestLedger Rule
+## 7. Syscall Stream Law
+
+The syscall stream is guarded by hibana.
+
+Example:
+
+```text
+MemBorrowRead
+  -> MemGrant
+  -> WasiFdWrite
+  -> WasiFdWriteRet
+  -> MemRelease
+```
+
+The Engine may emit a syscall request only when the projected Engine role allows
+that label.
+
+The Kernel may answer only when the projected Kernel role allows that response.
+
+Bad syscall order is not recovered.
+
+Bad syscall order is rejected.
+
+## 8. Memory Law
+
+Choreography guards memory protocol order.
+
+Leases guard memory authority.
+
+A memory lease contains:
+
+```text
+ptr
+len
+rights
+memory generation
+lease id
+```
+
+Pointer-backed syscalls require a matching lease.
+
+`memory.grow` creates a fence.
+
+After a fence:
+
+```text
+old leases reject
+old pending memory completions reject
+new access must borrow again
+```
+
+Choreography does not inspect memory contents.
+
+The lease table authorizes host access to guest memory.
+
+Remote nodes never receive pointers.
+
+## 9. GuestLedger Law
 
 GuestLedger is app-local fact storage only.
 
@@ -273,36 +349,59 @@ It owns:
 ```text
 fd materialized view
 memory lease table
-pending syscall table
-quota limits
-errno mapping
-optional preopen/object manifests
+pending syscall token table
+quota
+errno map
+optional preopen manifest view
 ```
 
 It does not own:
 
 ```text
 protocol order
-route choice outside explicit route arms
-loop control semantics
-retry semantics
-transport authority
+route choice
 filesystem authority
 network authority
+device authority
+transport authority
+scheduler policy
+retry policy
 ```
 
-Pending syscalls are linear tokens. A completion must match id, fd generation,
-lease generation, resource generation, and expected kind.
+A pending syscall token is linear.
 
-## 8. ChoreoFS Rule
-
-ChoreoFS is a resource identity store.
+Completion must match:
 
 ```text
-path string -> selector
-manifest entry -> object identity
-object identity -> explicit route arm
-control message -> fd materialized view
+token id
+token generation
+syscall kind
+fd
+fd generation
+lease id
+lease generation
+object generation
+expected length / event / tick
+```
+
+A stale token is not recoverable.
+
+## 10. ChoreoFS Law
+
+ChoreoFS is a bounded resource identity store.
+
+It is not POSIX.
+
+Authority chain:
+
+```text
+path string
+  -> selector
+  -> manifest entry
+  -> object identity
+  -> object generation
+  -> explicit route arm
+  -> fd materialized view
 ```
 
 Allowed object kinds:
@@ -315,26 +414,122 @@ ImageSlot
 StateSnapshot
 DirectoryView
 GpioDevice
+TimerDevice
+UartDevice
 NetworkDatagram
 NetworkStream
 NetworkListener
 RemoteObject
+ManagementObject
+TelemetryObject
 ```
 
 Forbidden:
 
 ```text
-ambient host filesystem authority
-cwd as authority
-inode as authority
+ambient host filesystem passthrough
+cwd authority
+inode authority
 implicit POSIX mutation
-hidden socket object authority
-unbounded path/iovec/dirent buffers
+hidden socket authority
+unbounded path buffers
+unbounded iovec buffers
+unbounded dirent buffers
 ```
 
-## 9. Interrupt / Resolver Rule
+## 11. Network / FD Law
 
-Interrupts are readiness evidence only.
+Network is Kernel object routing.
+
+Network is not WASI P2.
+Network is not socket authority.
+Network is not transport authority.
+
+WASI P1 apps reach network objects through fd-visible imports:
+
+```text
+sock_send     -> fd_write-like NetworkDatagram / NetworkStream route
+sock_recv     -> fd_read-like NetworkDatagram / NetworkStream route
+sock_shutdown -> fd_close / quiesce route
+sock_accept   -> explicit NetworkListener accept route
+```
+
+The app sees:
+
+```text
+fd
+ptr
+len
+errno
+```
+
+The Kernel sees:
+
+```text
+fd materialized view
+object identity
+object generation
+route arm
+policy
+lease
+pending token
+projected phase
+```
+
+The transport sees:
+
+```text
+bytes
+```
+
+No network operation may progress from fd number alone.
+
+No socket import may invent route authority.
+
+No transport packet may become syscall authority.
+
+## 12. Route Law
+
+Every semantic route is a hibana route.
+
+Route selection must be represented as:
+
+```text
+hibana route arm
+or hibana affine control token
+or hibana-projected control message
+```
+
+Route selection must not be represented as:
+
+```text
+if fd == ...
+if path starts_with ...
+if payload looks like ...
+if remote address == ...
+if ALPN == ...
+if lane == ...
+if board == ...
+```
+
+Remote object routing is:
+
+```text
+fd materialized view
+  -> object identity
+  -> route arm
+  -> Kernel_i <-> Kernel_j
+```
+
+There is no bridge.
+
+There is no relay.
+
+There is no `is_remote` semantic bypass.
+
+## 13. Resolver Law
+
+Interrupts and readiness are evidence only.
 
 ISR may:
 
@@ -342,7 +537,7 @@ ISR may:
 clear hardware flag
 capture bounded metadata
 enqueue raw readiness
-wake executor/core
+wake executor
 return quickly
 ```
 
@@ -350,15 +545,15 @@ ISR must not:
 
 ```text
 call Endpoint methods
-decode payloads as semantic authority
-inspect fd view
-inspect lease table
+decode payloads
+inspect fd authority
+inspect leases
 select routes
 allocate
 block
 ```
 
-Resolver converts raw readiness into typed ready facts:
+Resolver converts raw readiness into typed facts:
 
 ```text
 TimerSleepDone
@@ -368,54 +563,170 @@ TransportTxReady
 BudgetExpired
 LeaseFenceDue
 NodeHealthChanged
+CywReady
 ```
 
-Endpoint progress remains choreography-owned.
+A resolver fact admits progress only when hibana-projected phase is open.
 
-## 10. Network / Sock Rule
+Resolver is not protocol authority.
 
-Network is not WASI P2. Network is ChoreoFS object routing.
+## 14. Transport Law
 
-```text
-sock_send     -> fd_write-like NetworkDatagram/NetworkStream route
-sock_recv     -> fd_read-like NetworkDatagram/NetworkStream route
-sock_shutdown -> fd_close/quiesce route
-sock_accept   -> explicit NetworkListener accept route that mints an object fd
-```
+Transport carries bytes only.
 
-No sock import may invent transport semantics or bypass the fd view, lease,
-resolver, policy, or projection checks.
-
-## 11. Swarm Rule
-
-Swarm nodes do not share:
+A swarm frame may contain:
 
 ```text
-memory
-endpoint state
-runtime owner
-guest ledger
-lease table
-fd view
-```
-
-Swarm nodes communicate through:
-
-```text
-SwarmFrame bytes
-node id
+source node
+destination node
+session id
 session generation
 lane
-label hint as demux hint only
-payload decoded by endpoint/projection
+label hint
+sequence
+payload bytes
+auth tag if enabled
 ```
 
-Wi-Fi is a substrate. It is not route authority.
+Transport hints are not authority:
 
-## 12. CYW43439 Rule
+```text
+lane
+label hint
+source address
+destination address
+packet order
+retry count
+```
 
-CYW43439 bring-up has a choreography-visible boot prefix, but gSPI byte traffic
-is not itself hibana choreography.
+Payload authority begins only after endpoint decode.
+
+Valid substrates:
+
+```text
+RP2040 SIO FIFO
+RP2350 local substrate
+CYW43439 Wi-Fi byte transport
+QEMU UDP mesh for proof
+host queue for tests
+```
+
+Substrate is not semantics.
+
+## 15. Raspberry Pi Pico Law
+
+Raspberry Pi Pico is the smallest non-wireless target.
+
+It must support:
+
+```text
+RP2040
+thumbv6m-none-eabi
+no_std
+no_alloc
+dual-core role execution
+SIO FIFO byte movement
+GPIO device routes
+timer resolver facts
+UART debug sink
+bounded WASI P1 guest execution
+fd_write / poll_oneoff / proc_exit minimal profile
+memory lease checks
+memory.grow fence
+bad syscall order fail-closed path
+```
+
+It must not require:
+
+```text
+Wi-Fi
+CYW43439
+RP2350 capacity
+heap allocation
+host filesystem
+ordinary host std capacity
+```
+
+## 16. Raspberry Pi Pico W Law
+
+Raspberry Pi Pico W is the minimum physical wireless swarm target.
+
+It must support:
+
+```text
+RP2040 + CYW43439
+thumbv6m-none-eabi
+no_std
+no_alloc
+dual-core role execution
+SIO FIFO local byte movement
+GPIO device routes
+timer resolver facts
+UART debug sink
+CYW43439 reset / IRQ / gSPI bring-up
+CYW43439 firmware readiness
+Wi-Fi byte transport
+SwarmFrame exchange
+remote object routing through fd materialized views
+NetworkDatagram / NetworkStream / NetworkListener object routing
+bounded WASI P1 guest execution
+memory lease checks
+memory.grow fence
+bad syscall order fail-closed path
+```
+
+It must not require:
+
+```text
+RP2350-only capacity
+Pico 2 W-only assumptions
+host UDP mesh
+shared memory between nodes
+WASI Preview 2
+Component Model
+P2 sockets/resources/streams
+hidden relay
+bridge object
+heap allocation
+unbounded packet buffers
+```
+
+Pico W is stricter than Pico 2 W.
+
+If a wireless design cannot fit Pico W-class RP2040 capacity, it may be a
+Pico 2 W extension, but it is not the minimum wireless Hibana/Pico design.
+
+## 17. Raspberry Pi Pico 2 W Law
+
+Raspberry Pi Pico 2 W is the higher-capacity wireless swarm target.
+
+It must support:
+
+```text
+RP2350 + CYW43439
+thumbv8m.main-none-eabi
+no_std
+no_alloc
+CYW43439 reset / IRQ / gSPI bring-up
+CYW43439 firmware readiness
+Wi-Fi byte transport
+SwarmFrame exchange
+remote object routing
+network object routing
+management object routing
+multi-node choreography
+```
+
+It may use RP2350 capacity.
+
+It may not change Hibana/Pico semantics.
+
+A behavior that succeeds only because Pico 2 W has more capacity must be named
+as Pico 2 W capacity, not core choreography meaning.
+
+## 18. CYW43439 Law
+
+CYW43439 bring-up has a choreography-visible readiness prefix.
 
 Required order:
 
@@ -438,192 +749,259 @@ bad image hash -> reject
 out-of-order chunk -> reject
 ready before commit -> reject
 transport before CywReady -> reject
-MsgCywFailed -> no Wi-Fi fallback path
+CywFailed -> no Wi-Fi fallback
 ```
 
-QEMU should emulate this as far as possible. Real Pico 2 W must load the
-precompiled firmware over real gSPI/IRQ/reset wiring.
+gSPI byte traffic is not hibana choreography.
 
-## 13. Verification Gates
+It is machine implementation capacity.
 
-Release-quality local verification requires:
+Wi-Fi is transport.
+
+Wi-Fi is not route authority.
+
+## 19. Pico Capacity Law
+
+Every Pico firmware path must be bounded.
+
+Bounded resources:
 
 ```text
-cargo test
-cargo test --features profile-host-linux-wasip1-full
-bash scripts/check_wasip1_guest_builds.sh
-HIBANA_PICO_SKIP_QEMU_SWARM=1 bash scripts/check_plan_pico_gates.sh
+role programs
+endpoint slab
+tap buffer
+transport frame queue
+swarm frame payload
+fragment buffer
+memory lease table
+pending syscall table
+fd view
+ChoreoFS object table
+directory entries
+path selectors
+iovec copies
+management image chunks
+resolver readiness queue
+UART/debug buffer
 ```
 
-Release-quality QEMU verification additionally requires a patched QEMU and must
-run without the skip:
+Forbidden on Pico firmware paths:
 
 ```text
-bash scripts/check_plan_pico_gates.sh
+Vec
+Box
+Rc
+Arc
+String as runtime storage
+dynamic task spawning
+recursive parser
+unbounded guest-controlled loops
+unbounded import table allocation
+unbounded path expansion
+unbounded packet reassembly
 ```
 
-The non-skip gate must exercise the six-process Pico 2 W swarm runner.
+Host-only proof capacity may not define Pico semantics.
 
-The current source guards must reject:
+Host success is not Pico success.
+
+## 20. Feature Law
+
+Cargo features select implementation capacity only.
+
+Features may:
 
 ```text
-WASI P2 / WIT / Component Model runtime surface
-bridge / relay runtime surface
-old fd-table / compatibility names
-old remote-object metric compatibility names
+link implementation bodies
+remove implementation bodies
+select board substrate
+select engine coverage
+select syscall handler coverage
+select proof/demo artifact embedding
 ```
 
-## 14. Achieved
-
-These are considered implemented unless future tests regress:
+Features may not:
 
 ```text
-hibana crate 0.2.0 dependency
-no local hibana core edits
-No-P2 runtime surface guard
-No-bridge runtime surface guard
-WASI P1 real artifact build gate
-Baker Link WASI P1 traffic-light path
-Baker Link LED fds minted from ChoreoFS GpioDevice objects
-Baker bad-order fail-closed path
-timer resolver admission for poll_oneoff
-UART device choreography proof
-memory lease + memory.grow fence
-GuestLedger pending token model
-ChoreoFS host/full resource store
-ordinary Rust std host/full profile
-sock_* as WASI P1 ingress over network objects
-remote object route-arm proofs
-management/hot-swap lease/fence/quiesce proofs
-six-node swarm host proof
-Pico firmware builds for RP2040 and RP2350 targets
-QEMU CYW43439 model and patched QEMU runner scripts
-measurement/budget gates for current firmware images
+change choreography meaning
+change route labels
+change role ids
+make disabled syscalls succeed
+introduce fallback semantics
+introduce compatibility names
 ```
 
-## 15. Remaining Work
+Profile is capacity.
 
-These are the real remaining tasks.
+Choreography is meaning.
 
-### 15.1 QEMU Non-Skip Gate
-
-Run the full plan gate without `HIBANA_PICO_SKIP_QEMU_SWARM=1` on a machine with
-the patched QEMU binary.
-
-Exit:
+Important profiles:
 
 ```text
-six QEMU Pico 2 W processes run the current minimal kernels
-coordinator sees all sensor WASI P1 markers
-remote actuator, telemetry, network object, and management phases pass
+profile-rp2040-pico-min:
+  RP2040 non-wireless minimal WASI P1 device profile
+
+profile-rp2040-picow-swarm-min:
+  RP2040 + CYW43439 minimum wireless swarm profile
+
+profile-rp2350-pico2w-swarm-min:
+  RP2350 + CYW43439 higher-capacity wireless swarm profile
+
+profile-host-linux-wasip1-full:
+  host proof profile for wider ordinary WASI P1 coverage
 ```
 
-### 15.2 Real Pico 2 W CYW43439 Bring-Up
+## 21. Spec Generation Law
 
-Implement and validate real hardware gSPI/reset/IRQ firmware loading.
+Repeated protocol facts must have one source.
 
-Exit:
+Generate from single internal specs:
 
 ```text
-real CYW43439 firmware load reaches CywReady
-CLM/NVRAM apply succeeds
-transport cannot open before CywReady
-WiFiRxReady remains readiness evidence only
+labels
+WASI P1 import coverage
+handler availability
+typed ENOSYS / typed reject disposition
+route arm ids
+profile capability matrix
+projection accessors
+coverage tests
 ```
 
-### 15.3 Real Wi-Fi Transport
-
-Replace QEMU UDP mesh with real CYW43439 Wi-Fi transport on Pico 2 W.
-
-Exit:
+Forbidden:
 
 ```text
-two physical Pico 2 W nodes exchange SwarmFrame bytes
-label_hint remains demux only
+manual duplicate label tables
+manual duplicate syscall tables
+manual duplicate profile truth tables
+manual duplicate route ids
+```
+
+One meaning gets one source.
+
+## 22. Verification Law
+
+A release-quality tree must prove:
+
+```text
+No-P2 surface
+No-WIT surface
+No-Component-Model surface
+No-bridge surface
+ordinary wasm32-wasip1 artifact path
+import trampoline -> EngineReq path
+Engine -> Kernel hibana choreography path
+fd materialized view checks
+memory lease checks
+memory.grow fence
+pending syscall token checks
+ChoreoFS object authority
+NetworkObject routing without P2
+RemoteObject routing without bridge
+resolver readiness admission
+swarm nodes do not share memory
+transport label_hint is demux only
 endpoint decode owns payload authority
-replay/session generation checks remain active
+management update requires fence / quiesce / generation
 ```
 
-### 15.4 Physical Swarm
-
-Run the composed choreography on two nodes, then three or more nodes.
-
-Exit:
+Raspberry Pi Pico verification:
 
 ```text
-Coordinator/Sensor/Actuator/Gateway roles communicate over real Wi-Fi
-remote object read/write works through fd
-remote node never accesses local Wasm memory
-node revoke invalidates materialized remote object views
+thumbv6m-none-eabi build
+real RP2040 hardware run
+fd_write path
+poll_oneoff path
+proc_exit path
+bad-order fail-closed path
+firmware size measurement
+SRAM measurement
+stack high-water measurement
 ```
 
-### 15.5 Real Measurement Gates
-
-Measure the physical system.
-
-Exit:
+Raspberry Pi Pico W verification:
 
 ```text
-firmware-load time
-Wi-Fi RTT
-remote object read latency
-remote actuator latency
-Core0 max blocked time
-stack high-water
-SRAM high-water
-packet loss recovery cost
-management transfer time
+thumbv6m-none-eabi build
+real RP2040 + CYW43439 bring-up
+CywReady reached
+transport cannot open before CywReady
+two physical Pico W nodes exchange SwarmFrame bytes
+network object route works through fd
+remote object route works through fd
+firmware size / SRAM / stack measurements
 ```
 
-## 16. Publication Readiness
-
-Before public release:
+Raspberry Pi Pico 2 W verification:
 
 ```text
-run all local gates
-run non-skip QEMU swarm gate
-document QEMU requirements
-document Baker Link flash/debug workflow
-document firmware artifact licensing and local-only files
-document real Pico 2 W status honestly
-keep README and plan.md aligned
+thumbv8m.main-none-eabi build
+real RP2350 + CYW43439 bring-up
+two physical Pico 2 W nodes exchange SwarmFrame bytes
+three or more nodes run composed choreography
+remote object / network object / management object phases pass
+firmware size / SRAM / stack measurements
 ```
 
-Do not claim real Pico 2 W Wi-Fi swarm completion until the physical transport
-and physical swarm gates pass.
+QEMU proof is useful.
 
-## 17. Non-Goals
+QEMU proof is not physical success.
+
+## 23. Publication Law
+
+Do not claim Raspberry Pi Pico support until RP2040 physical gates pass.
+
+Do not claim Raspberry Pi Pico W support until RP2040 + CYW43439 physical gates
+pass.
+
+Do not claim Raspberry Pi Pico 2 W Wi-Fi swarm completion until RP2350 +
+CYW43439 physical swarm gates pass.
+
+Do not claim production management security while using demo authentication.
+
+Demo auth must be named demo auth.
+
+## 24. Non-Goals
 
 ```text
 WASI Preview 2
-WIT runtime
-Component Model loader
-P2 socket/resource/stream authority
+WIT
+Component Model
+P2 sockets/resources/streams
 full POSIX filesystem
-ambient host filesystem passthrough
-bridge object as runtime layer
-relay path outside choreography
-ISR-driven endpoint progress
-SPI byte stream as hibana protocol
-hidden scheduler retry/fallback
+ambient host filesystem
+general-purpose OS scheduler
 hard-real-time arbitrary Wasm execution
-BLE as runtime swarm backbone
+transport-level semantic routing
+bridge object
+relay bypass
+automatic protocol recovery
+heap-required Pico runtime
+BLE as swarm backbone
 unauthenticated production management
 ```
 
-## 18. Final Principle
+## 25. Final Principle
+
+Only hibana choreography decides protocol legality.
+Only hibana projection defines local progress.
+Only hibana route/control tokens express choices.
+Only endpoint decode gives payload meaning.
+Only control-message history materializes fd views.
+Only leases authorize guest memory access.
+Only pending tokens authorize async completion.
+Only resolver facts admit readiness.
+Only object generations keep resources live.
+Only transport carries bytes.
+Only bounded static capacity is valid on Pico firmware.
 
 ```text
-Only choreography decides protocol legality.
-Only control-message history materializes guest-visible fd views.
-Only leases authorize guest memory access.
-Only resolver facts admit asynchronous readiness.
-Only transport carries bytes.
+No P2.
+No bridge.
+No relay.
+No hidden fallback.
+No heap-required Pico path.
+No runtime protocol intelligence outside hibana.
 ```
 
-No P2 is needed.
-No bridge is needed.
-No relay is needed.
-No hidden fallback is needed.
-
-Only choreography.
+Only choreography on real Pico-class hardware.

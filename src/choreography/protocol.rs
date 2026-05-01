@@ -86,6 +86,12 @@ pub const LABEL_WASI_ARGS_GET_RET: u8 = 101;
 pub const LABEL_WASI_ENVIRON_GET: u8 = 102;
 pub const LABEL_WASI_ENVIRON_GET_RET: u8 = 103;
 pub const LABEL_WASI_FD_ERROR: u8 = 104;
+pub const LABEL_WASI_ARGS_SIZES_GET: u8 = 123;
+pub const LABEL_WASI_ARGS_SIZES_GET_RET: u8 = 124;
+pub const LABEL_WASI_ENVIRON_SIZES_GET: u8 = 125;
+pub const LABEL_WASI_ENVIRON_SIZES_GET_RET: u8 = 126;
+pub const LABEL_WASI_PATH_OPEN: u8 = 127;
+pub const LABEL_WASI_PATH_OPEN_RET: u8 = 128;
 pub const LABEL_REMOTE_SAMPLE_REQ: u8 = 65;
 pub const LABEL_REMOTE_SAMPLE_RET: u8 = 66;
 pub const LABEL_REMOTE_ACTUATE_REQ: u8 = 67;
@@ -144,6 +150,9 @@ const TAG_REQ_WASI_PROC_EXIT: u8 = 18;
 const TAG_REQ_WASI_ARGS_GET: u8 = 19;
 const TAG_REQ_WASI_ENVIRON_GET: u8 = 20;
 const TAG_REQ_WASI_CLOCK_RES_GET: u8 = 21;
+const TAG_REQ_WASI_ARGS_SIZES_GET: u8 = 22;
+const TAG_REQ_WASI_ENVIRON_SIZES_GET: u8 = 23;
+const TAG_REQ_WASI_PATH_OPEN: u8 = 24;
 const TAG_RET_LOGGED: u8 = 1;
 const TAG_RET_YIELDED: u8 = 2;
 const TAG_RET_WASIP1_STDOUT_WRITTEN: u8 = 3;
@@ -163,8 +172,12 @@ const TAG_RET_WASI_RANDOM_DONE: u8 = 16;
 const TAG_RET_WASI_ARGS_DONE: u8 = 17;
 const TAG_RET_WASI_ENVIRON_DONE: u8 = 18;
 const TAG_RET_WASI_CLOCK_RESOLUTION: u8 = 19;
+const TAG_RET_WASI_ARGS_SIZES: u8 = 20;
+const TAG_RET_WASI_ENVIRON_SIZES: u8 = 21;
+const TAG_RET_WASI_PATH_OPENED: u8 = 22;
 
 pub const WASIP1_STREAM_CHUNK_CAPACITY: usize = 30;
+pub const WASIP1_PATH_CHUNK_CAPACITY: usize = 48;
 pub const STDOUT_CHUNK_CAPACITY: usize = WASIP1_STREAM_CHUNK_CAPACITY;
 pub const STDERR_CHUNK_CAPACITY: usize = WASIP1_STREAM_CHUNK_CAPACITY;
 pub const STDIN_CHUNK_CAPACITY: usize = WASIP1_STREAM_CHUNK_CAPACITY;
@@ -179,7 +192,7 @@ pub type MemoryLeaseWireHandle = (u8, u64);
 pub struct EngineLabelUniverse;
 
 impl LabelUniverse for EngineLabelUniverse {
-    const MAX_LABEL: u8 = LABEL_ROUTE_NETWORK_ACCEPT;
+    const MAX_LABEL: u8 = LABEL_WASI_PATH_OPEN_RET;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1659,8 +1672,11 @@ pub enum EngineReq {
     PollOneoff(PollOneoff),
     RandomGet(RandomGet),
     ProcExit(ProcExitStatus),
+    ArgsSizesGet(ArgsSizesGet),
     ArgsGet(ArgsGet),
+    EnvironSizesGet(EnvironSizesGet),
     EnvironGet(EnvironGet),
+    PathOpen(PathOpen),
     TimerSleepUntil(TimerSleepUntil),
     GpioSet(GpioSet),
 }
@@ -1685,8 +1701,11 @@ impl WireEncode for EngineReq {
             Self::PollOneoff(_) => 9,
             Self::RandomGet(_) => 3,
             Self::ProcExit(_) => 2,
+            Self::ArgsSizesGet(_) => 1,
             Self::ArgsGet(_) => 3,
+            Self::EnvironSizesGet(_) => 1,
             Self::EnvironGet(_) => 3,
+            Self::PathOpen(open) => 12 + open.len(),
             Self::TimerSleepUntil(_) => 9,
             Self::GpioSet(_) => 3,
         })
@@ -1842,6 +1861,13 @@ impl WireEncode for EngineReq {
                 out[1] = status.code();
                 Ok(2)
             }
+            Self::ArgsSizesGet(_) => {
+                if out.is_empty() {
+                    return Err(CodecError::Truncated);
+                }
+                out[0] = TAG_REQ_WASI_ARGS_SIZES_GET;
+                Ok(1)
+            }
             Self::ArgsGet(request) => {
                 if out.len() < 3 {
                     return Err(CodecError::Truncated);
@@ -1851,6 +1877,13 @@ impl WireEncode for EngineReq {
                 out[2] = request.max_len();
                 Ok(3)
             }
+            Self::EnvironSizesGet(_) => {
+                if out.is_empty() {
+                    return Err(CodecError::Truncated);
+                }
+                out[0] = TAG_REQ_WASI_ENVIRON_SIZES_GET;
+                Ok(1)
+            }
             Self::EnvironGet(request) => {
                 if out.len() < 3 {
                     return Err(CodecError::Truncated);
@@ -1859,6 +1892,19 @@ impl WireEncode for EngineReq {
                 out[1] = request.lease_id();
                 out[2] = request.max_len();
                 Ok(3)
+            }
+            Self::PathOpen(open) => {
+                let len = open.len();
+                if out.len() < 12 + len {
+                    return Err(CodecError::Truncated);
+                }
+                out[0] = TAG_REQ_WASI_PATH_OPEN;
+                out[1] = open.preopen_fd();
+                out[2] = open.lease_id();
+                out[3..11].copy_from_slice(&open.rights_base().to_be_bytes());
+                out[11] = len as u8;
+                out[12..12 + len].copy_from_slice(open.path());
+                Ok(12 + len)
             }
             Self::TimerSleepUntil(sleep) => {
                 if out.len() < 9 {
@@ -1922,8 +1968,13 @@ impl WirePayload for EngineReq {
             TAG_REQ_WASI_POLL_ONEOFF => Ok(Self::PollOneoff(PollOneoff::decode(rest)?)),
             TAG_REQ_WASI_RANDOM_GET => Ok(Self::RandomGet(RandomGet::decode(rest)?)),
             TAG_REQ_WASI_PROC_EXIT => Ok(Self::ProcExit(ProcExitStatus::decode(rest)?)),
+            TAG_REQ_WASI_ARGS_SIZES_GET => Ok(Self::ArgsSizesGet(ArgsSizesGet::decode(rest)?)),
             TAG_REQ_WASI_ARGS_GET => Ok(Self::ArgsGet(ArgsGet::decode(rest)?)),
+            TAG_REQ_WASI_ENVIRON_SIZES_GET => {
+                Ok(Self::EnvironSizesGet(EnvironSizesGet::decode(rest)?))
+            }
             TAG_REQ_WASI_ENVIRON_GET => Ok(Self::EnvironGet(EnvironGet::decode(rest)?)),
+            TAG_REQ_WASI_PATH_OPEN => Ok(Self::PathOpen(PathOpen::decode(rest)?)),
             TAG_REQ_TIMER_SLEEP_UNTIL => Ok(Self::TimerSleepUntil(
                 TimerSleepUntil::decode_payload(Payload::new(rest))?,
             )),
@@ -1950,8 +2001,11 @@ pub enum EngineRet {
     ClockTime(ClockNow),
     PollReady(PollReady),
     RandomDone(RandomDone),
+    ArgsSizes(ArgsSizes),
     ArgsDone(ArgsDone),
+    EnvironSizes(EnvironSizes),
     EnvironDone(EnvironDone),
+    PathOpened(PathOpened),
     TimerSleepDone(TimerSleepDone),
     GpioSetDone(GpioSet),
 }
@@ -1974,8 +2028,11 @@ impl WireEncode for EngineRet {
             Self::ClockTime(_) => 9,
             Self::PollReady(_) => 2,
             Self::RandomDone(done) => 3 + done.len(),
+            Self::ArgsSizes(_) => 3,
             Self::ArgsDone(done) => 3 + done.len(),
+            Self::EnvironSizes(_) => 3,
             Self::EnvironDone(done) => 3 + done.len(),
+            Self::PathOpened(_) => 4,
             Self::TimerSleepDone(_) => 9,
             Self::GpioSetDone(_) => 3,
         })
@@ -2115,6 +2172,15 @@ impl WireEncode for EngineRet {
                 out[3..3 + len].copy_from_slice(done.as_bytes());
                 Ok(3 + len)
             }
+            Self::ArgsSizes(sizes) => {
+                if out.len() < 3 {
+                    return Err(CodecError::Truncated);
+                }
+                out[0] = TAG_RET_WASI_ARGS_SIZES;
+                out[1] = sizes.count();
+                out[2] = sizes.buf_size();
+                Ok(3)
+            }
             Self::ArgsDone(done) => {
                 let len = done.len();
                 if out.len() < 3 + len {
@@ -2126,6 +2192,15 @@ impl WireEncode for EngineRet {
                 out[3..3 + len].copy_from_slice(done.as_bytes());
                 Ok(3 + len)
             }
+            Self::EnvironSizes(sizes) => {
+                if out.len() < 3 {
+                    return Err(CodecError::Truncated);
+                }
+                out[0] = TAG_RET_WASI_ENVIRON_SIZES;
+                out[1] = sizes.count();
+                out[2] = sizes.buf_size();
+                Ok(3)
+            }
             Self::EnvironDone(done) => {
                 let len = done.len();
                 if out.len() < 3 + len {
@@ -2136,6 +2211,15 @@ impl WireEncode for EngineRet {
                 out[2] = len as u8;
                 out[3..3 + len].copy_from_slice(done.as_bytes());
                 Ok(3 + len)
+            }
+            Self::PathOpened(opened) => {
+                if out.len() < 4 {
+                    return Err(CodecError::Truncated);
+                }
+                out[0] = TAG_RET_WASI_PATH_OPENED;
+                out[1] = opened.fd();
+                out[2..4].copy_from_slice(&opened.errno().to_be_bytes());
+                Ok(4)
             }
             Self::TimerSleepDone(done) => {
                 if out.len() < 9 {
@@ -2199,8 +2283,11 @@ impl WirePayload for EngineRet {
             TAG_RET_WASI_CLOCK_TIME => Ok(Self::ClockTime(ClockNow::decode(rest)?)),
             TAG_RET_WASI_POLL_READY => Ok(Self::PollReady(PollReady::decode(rest)?)),
             TAG_RET_WASI_RANDOM_DONE => Ok(Self::RandomDone(RandomDone::decode(rest)?)),
+            TAG_RET_WASI_ARGS_SIZES => Ok(Self::ArgsSizes(ArgsSizes::decode(rest)?)),
             TAG_RET_WASI_ARGS_DONE => Ok(Self::ArgsDone(ArgsDone::decode(rest)?)),
+            TAG_RET_WASI_ENVIRON_SIZES => Ok(Self::EnvironSizes(EnvironSizes::decode(rest)?)),
             TAG_RET_WASI_ENVIRON_DONE => Ok(Self::EnvironDone(EnvironDone::decode(rest)?)),
+            TAG_RET_WASI_PATH_OPENED => Ok(Self::PathOpened(PathOpened::decode(rest)?)),
             TAG_RET_TIMER_SLEEP_DONE => Ok(Self::TimerSleepDone(TimerSleepDone::decode_payload(
                 Payload::new(rest),
             )?)),
@@ -2563,6 +2650,100 @@ impl WirePayload for FdError {
 pub type FdErrorMsg = Msg<LABEL_WASI_FD_ERROR, FdError>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PathOpen {
+    preopen_fd: u8,
+    lease_id: u8,
+    rights_base: u64,
+    path: [u8; WASIP1_PATH_CHUNK_CAPACITY],
+    len: usize,
+}
+
+impl PathOpen {
+    pub fn new(
+        preopen_fd: u8,
+        lease_id: u8,
+        rights_base: u64,
+        path: &[u8],
+    ) -> Result<Self, CodecError> {
+        if path.len() > WASIP1_PATH_CHUNK_CAPACITY {
+            return Err(CodecError::Invalid("path_open path exceeds capacity"));
+        }
+        let mut out = [0u8; WASIP1_PATH_CHUNK_CAPACITY];
+        out[..path.len()].copy_from_slice(path);
+        Ok(Self {
+            preopen_fd,
+            lease_id,
+            rights_base,
+            path: out,
+            len: path.len(),
+        })
+    }
+
+    pub const fn preopen_fd(&self) -> u8 {
+        self.preopen_fd
+    }
+
+    pub const fn lease_id(&self) -> u8 {
+        self.lease_id
+    }
+
+    pub const fn rights_base(&self) -> u64 {
+        self.rights_base
+    }
+
+    pub const fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn path(&self) -> &[u8] {
+        self.path.split_at(self.len).0
+    }
+
+    fn decode(bytes: &[u8]) -> Result<Self, CodecError> {
+        if bytes.len() < 11 {
+            return Err(CodecError::Truncated);
+        }
+        let len = bytes[10] as usize;
+        if bytes.len() != 11 + len {
+            return Err(CodecError::Invalid("path_open length mismatch"));
+        }
+        let mut rights = [0u8; 8];
+        rights.copy_from_slice(&bytes[2..10]);
+        Self::new(bytes[0], bytes[1], u64::from_be_bytes(rights), &bytes[11..])
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PathOpened {
+    fd: u8,
+    errno: u16,
+}
+
+impl PathOpened {
+    pub const fn new(fd: u8, errno: u16) -> Self {
+        Self { fd, errno }
+    }
+
+    pub const fn fd(&self) -> u8 {
+        self.fd
+    }
+
+    pub const fn errno(&self) -> u16 {
+        self.errno
+    }
+
+    fn decode(bytes: &[u8]) -> Result<Self, CodecError> {
+        if bytes.len() != 3 {
+            return Err(CodecError::Invalid("path_open reply carries three bytes"));
+        }
+        Ok(Self::new(
+            bytes[0],
+            u16::from_be_bytes([bytes[1], bytes[2]]),
+        ))
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ClockResGet {
     clock_id: u8,
 }
@@ -2723,6 +2904,22 @@ impl ProcExitStatus {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ArgsSizesGet;
+
+impl ArgsSizesGet {
+    pub const fn new() -> Self {
+        Self
+    }
+
+    fn decode(bytes: &[u8]) -> Result<Self, CodecError> {
+        if !bytes.is_empty() {
+            return Err(CodecError::Invalid("args_sizes_get carries no payload"));
+        }
+        Ok(Self)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ArgsGet {
     lease_id: u8,
     max_len: u8,
@@ -2755,6 +2952,22 @@ impl ArgsGet {
             return Err(CodecError::Invalid("args_get carries two bytes"));
         }
         Self::new_with_lease(bytes[0], bytes[1])
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EnvironSizesGet;
+
+impl EnvironSizesGet {
+    pub const fn new() -> Self {
+        Self
+    }
+
+    fn decode(bytes: &[u8]) -> Result<Self, CodecError> {
+        if !bytes.is_empty() {
+            return Err(CodecError::Invalid("environ_sizes_get carries no payload"));
+        }
+        Ok(Self)
     }
 }
 
@@ -2966,6 +3179,33 @@ impl RandomDone {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ArgsSizes {
+    count: u8,
+    buf_size: u8,
+}
+
+impl ArgsSizes {
+    pub const fn new(count: u8, buf_size: u8) -> Self {
+        Self { count, buf_size }
+    }
+
+    pub const fn count(&self) -> u8 {
+        self.count
+    }
+
+    pub const fn buf_size(&self) -> u8 {
+        self.buf_size
+    }
+
+    fn decode(bytes: &[u8]) -> Result<Self, CodecError> {
+        if bytes.len() != 2 {
+            return Err(CodecError::Invalid("args sizes reply carries two bytes"));
+        }
+        Ok(Self::new(bytes[0], bytes[1]))
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ArgsDone {
     chunk: Wasip1StreamChunk,
 }
@@ -2991,6 +3231,33 @@ impl ArgsDone {
 
     fn decode(bytes: &[u8]) -> Result<Self, CodecError> {
         Wasip1StreamChunk::decode(bytes).map(|chunk| Self { chunk })
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EnvironSizes {
+    count: u8,
+    buf_size: u8,
+}
+
+impl EnvironSizes {
+    pub const fn new(count: u8, buf_size: u8) -> Self {
+        Self { count, buf_size }
+    }
+
+    pub const fn count(&self) -> u8 {
+        self.count
+    }
+
+    pub const fn buf_size(&self) -> u8 {
+        self.buf_size
+    }
+
+    fn decode(bytes: &[u8]) -> Result<Self, CodecError> {
+        if bytes.len() != 2 {
+            return Err(CodecError::Invalid("environ sizes reply carries two bytes"));
+        }
+        Ok(Self::new(bytes[0], bytes[1]))
     }
 }
 
@@ -3038,12 +3305,13 @@ fn decode_u32_payload(bytes: &[u8]) -> Result<u32, CodecError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ArgsDone, ArgsGet, BudgetExpired, BudgetRestart, BudgetRun, BudgetSuspend, ClockNow,
-        ClockResGet, ClockResolution, ClockTimeGet, EngineReq, EngineRet, EnvironDone, EnvironGet,
-        FdClosed, FdRead, FdReadDone, FdRequest, FdStat, FdWrite, FdWriteDone, GpioEdge, GpioSet,
-        GpioWait, MGMT_IMAGE_CHUNK_CAPACITY, MemBorrow, MemCommit, MemFence, MemFenceReason,
-        MemGrant, MemRelease, MemRights, MgmtImageActivate, MgmtImageBegin, MgmtImageChunk,
-        MgmtImageEnd, MgmtImageRollback, MgmtStatus, MgmtStatusCode, PollOneoff, PollReady,
+        ArgsDone, ArgsGet, ArgsSizes, ArgsSizesGet, BudgetExpired, BudgetRestart, BudgetRun,
+        BudgetSuspend, ClockNow, ClockResGet, ClockResolution, ClockTimeGet, EngineReq, EngineRet,
+        EnvironDone, EnvironGet, EnvironSizes, EnvironSizesGet, FdClosed, FdRead, FdReadDone,
+        FdRequest, FdStat, FdWrite, FdWriteDone, GpioEdge, GpioSet, GpioWait,
+        MGMT_IMAGE_CHUNK_CAPACITY, MemBorrow, MemCommit, MemFence, MemFenceReason, MemGrant,
+        MemRelease, MemRights, MgmtImageActivate, MgmtImageBegin, MgmtImageChunk, MgmtImageEnd,
+        MgmtImageRollback, MgmtStatus, MgmtStatusCode, PathOpen, PathOpened, PollOneoff, PollReady,
         ProcExitStatus, RandomDone, RandomGet, RandomSeed, StderrChunk, StdinChunk, StdinRequest,
         StdoutChunk, TimerSleepDone, TimerSleepUntil, UartWrite, UartWriteDone, Wasip1ExitStatus,
     };
@@ -3077,10 +3345,16 @@ mod tests {
             super::LABEL_WASI_RANDOM_GET,
             super::LABEL_WASI_RANDOM_GET_RET,
             super::LABEL_WASI_PROC_EXIT,
+            super::LABEL_WASI_ARGS_SIZES_GET,
+            super::LABEL_WASI_ARGS_SIZES_GET_RET,
             super::LABEL_WASI_ARGS_GET,
             super::LABEL_WASI_ARGS_GET_RET,
+            super::LABEL_WASI_ENVIRON_SIZES_GET,
+            super::LABEL_WASI_ENVIRON_SIZES_GET_RET,
             super::LABEL_WASI_ENVIRON_GET,
             super::LABEL_WASI_ENVIRON_GET_RET,
+            super::LABEL_WASI_PATH_OPEN,
+            super::LABEL_WASI_PATH_OPEN_RET,
             super::LABEL_ENGINE_RUN,
             super::LABEL_ENGINE_BUDGET_EXPIRED,
             super::LABEL_ENGINE_SUSPEND,
@@ -3100,7 +3374,10 @@ mod tests {
             assert_ne!(label, 48);
             assert_ne!(label, 49);
             assert_ne!(label, 57);
-            assert!(label < super::LABEL_MEM_GRANT_READ_CONTROL);
+            assert!(
+                label
+                    <= <super::EngineLabelUniverse as hibana::substrate::runtime::LabelUniverse>::MAX_LABEL
+            );
         }
     }
 
@@ -3246,10 +3523,15 @@ mod tests {
             EngineReq::PollOneoff(PollOneoff::new(44)),
             EngineReq::RandomGet(RandomGet::new_with_lease(13, 8).expect("random_get")),
             EngineReq::ProcExit(ProcExitStatus::new(7)),
+            EngineReq::ArgsSizesGet(ArgsSizesGet::new()),
             EngineReq::ArgsGet(ArgsGet::new_with_lease(14, 16).expect("args_get")),
+            EngineReq::EnvironSizesGet(EnvironSizesGet::new()),
             EngineReq::EnvironGet(EnvironGet::new_with_lease(15, 16).expect("environ_get")),
+            EngineReq::PathOpen(
+                PathOpen::new(9, 16, 1 << 6, b"device/led/green").expect("path_open"),
+            ),
         ];
-        let mut buf = [0u8; 40];
+        let mut buf = [0u8; 80];
         for req in requests {
             let len = encode(&req, &mut buf);
             let decoded = EngineReq::decode_payload(Payload::new(&buf[..len])).expect("decode req");
@@ -3273,6 +3555,15 @@ mod tests {
         let len = encode(&req, &mut buf);
         let decoded = EngineReq::decode_payload(Payload::new(&buf[..len])).expect("decode req");
         assert_eq!(decoded, req);
+    }
+
+    #[test]
+    fn engine_ret_round_trips_path_opened() {
+        let ret = EngineRet::PathOpened(PathOpened::new(3, 0));
+        let mut buf = [0u8; 4];
+        let len = encode(&ret, &mut buf);
+        let decoded = EngineRet::decode_payload(Payload::new(&buf[..len])).expect("decode ret");
+        assert_eq!(decoded, ret);
     }
 
     #[test]
@@ -3354,7 +3645,9 @@ mod tests {
             EngineRet::ClockTime(ClockNow::new(123_456_789)),
             EngineRet::PollReady(PollReady::new(1)),
             EngineRet::RandomDone(RandomDone::new_with_lease(13, b"12345678").expect("random")),
+            EngineRet::ArgsSizes(ArgsSizes::new(1, 4)),
             EngineRet::ArgsDone(ArgsDone::new_with_lease(14, b"arg").expect("args")),
+            EngineRet::EnvironSizes(EnvironSizes::new(1, 4)),
             EngineRet::EnvironDone(EnvironDone::new_with_lease(15, b"K=V").expect("env")),
         ];
         let mut buf = [0u8; 40];

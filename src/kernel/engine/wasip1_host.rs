@@ -4,19 +4,47 @@
 //! larger-platform execution harness used to prove that ordinary Rust std
 //! `wasm32-wasip1` artifacts enter the same typed syscall stream as embedded
 //! guests. The Wasm core stays syscall-agnostic; this runner maps Preview 1
-//! imports to `EngineReq`, completes them through bounded fd/lease/resource
-//! state, and records the typed stream for choreography tests.
+//! imports to `EngineReq`, drives the matching Engine/Kernel projected
+//! localside exchange, and only then completes the guest through bounded
+//! fd/lease/resource state.
 
 extern crate std;
 
 use std::vec::Vec;
 
+use hibana::{
+    Endpoint,
+    g::{self, Msg, Role},
+    substrate::{
+        SessionKit,
+        binding::NoBinding,
+        ids::SessionId,
+        program::{RoleProgram, project},
+        runtime::{Config, CounterClock},
+        tap::TapEvent,
+    },
+};
+
 use crate::{
     choreography::protocol::{
-        ArgsDone, ArgsGet, ClockNow, ClockResGet, ClockResolution, ClockTimeGet, EngineReq,
-        EngineRet, EnvironDone, EnvironGet, FdClosed, FdRead, FdReadDone, FdRequest, FdStat,
-        FdWrite, FdWriteDone, MemRights, PollOneoff, PollReady, ProcExitStatus, RandomDone,
-        RandomGet, WASIP1_STREAM_CHUNK_CAPACITY,
+        ArgsDone, ArgsGet, ArgsSizes, ArgsSizesGet, ClockNow, ClockResGet, ClockResolution,
+        ClockTimeGet, EngineLabelUniverse, EngineReq, EngineRet, EnvironDone, EnvironGet,
+        EnvironSizes, EnvironSizesGet, FdClosed, FdRead, FdReadDone, FdRequest, FdStat, FdWrite,
+        FdWriteDone, LABEL_ENGINE_REQ, LABEL_ENGINE_RET, LABEL_GPIO_SET, LABEL_GPIO_SET_DONE,
+        LABEL_TIMER_SLEEP_DONE, LABEL_TIMER_SLEEP_UNTIL, LABEL_WASI_ARGS_GET,
+        LABEL_WASI_ARGS_GET_RET, LABEL_WASI_ARGS_SIZES_GET, LABEL_WASI_ARGS_SIZES_GET_RET,
+        LABEL_WASI_CLOCK_RES_GET, LABEL_WASI_CLOCK_RES_GET_RET, LABEL_WASI_CLOCK_TIME_GET,
+        LABEL_WASI_CLOCK_TIME_GET_RET, LABEL_WASI_ENVIRON_GET, LABEL_WASI_ENVIRON_GET_RET,
+        LABEL_WASI_ENVIRON_SIZES_GET, LABEL_WASI_ENVIRON_SIZES_GET_RET, LABEL_WASI_FD_CLOSE,
+        LABEL_WASI_FD_CLOSE_RET, LABEL_WASI_FD_FDSTAT_GET, LABEL_WASI_FD_FDSTAT_GET_RET,
+        LABEL_WASI_FD_READ, LABEL_WASI_FD_READ_RET, LABEL_WASI_FD_WRITE, LABEL_WASI_FD_WRITE_RET,
+        LABEL_WASI_PATH_OPEN, LABEL_WASI_PATH_OPEN_RET, LABEL_WASI_POLL_ONEOFF,
+        LABEL_WASI_POLL_ONEOFF_RET, LABEL_WASI_PROC_EXIT, LABEL_WASI_RANDOM_GET,
+        LABEL_WASI_RANDOM_GET_RET, LABEL_WASIP1_CLOCK_NOW, LABEL_WASIP1_CLOCK_NOW_RET,
+        LABEL_WASIP1_EXIT, LABEL_WASIP1_RANDOM_SEED, LABEL_WASIP1_RANDOM_SEED_RET,
+        LABEL_WASIP1_STDERR, LABEL_WASIP1_STDERR_RET, LABEL_WASIP1_STDIN, LABEL_WASIP1_STDIN_RET,
+        LABEL_WASIP1_STDOUT, LABEL_WASIP1_STDOUT_RET, LABEL_YIELD_REQ, LABEL_YIELD_RET, MemRights,
+        PollOneoff, PollReady, ProcExitStatus, RandomDone, RandomGet, WASIP1_STREAM_CHUNK_CAPACITY,
     },
     kernel::{
         choreofs::{
@@ -29,6 +57,7 @@ use crate::{
         },
         wasi::{ChoreoResourceKind, PicoFdRights},
     },
+    substrate::{exec::run_current_task, host_queue::HostQueueBackend, transport::SioTransport},
 };
 
 use super::wasm::{
@@ -47,6 +76,8 @@ const HOST_RANDOM_BYTE: u8 = 0x42;
 
 pub type HostFullGuestLedger = GuestLedger<16, 8, 16>;
 pub type HostFullChoreoFs = ChoreoFsStore<8, 64, 256>;
+type HostFullTransport<'a> = SioTransport<&'a HostQueueBackend>;
+type HostFullKit<'a> = SessionKit<'a, HostFullTransport<'a>, EngineLabelUniverse, CounterClock, 1>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct NetworkAcceptRoute {
@@ -100,6 +131,7 @@ pub struct CoreWasip1HostRunReport {
     pub network_accept_count: u32,
     pub network_accept_reject_count: u32,
     pub typed_reject_count: u32,
+    pub localside_drive_count: u32,
 }
 
 pub struct CoreWasip1HostRunner<'a> {
@@ -219,13 +251,25 @@ impl<'a> CoreWasip1HostRunner<'a> {
             match self.guest.resume_with_fuel(250_000)? {
                 CoreWasip1Trap::FdWrite(call) => {
                     let bytes = self.fd_write_bytes(call)?;
-                    let total = bytes.len() as u32;
-                    for chunk in bytes.chunks(WASIP1_STREAM_CHUNK_CAPACITY) {
+                    if bytes.is_empty() {
                         let request = EngineReq::FdWrite(
-                            FdWrite::new_with_lease(call.fd(), 1, chunk)
+                            FdWrite::new_with_lease(call.fd(), 1, &[])
                                 .map_err(|_| CoreWasip1HostRunError::Unsupported("fd_write"))?,
                         );
-                        self.record_request(request, &mut report);
+                        let reply = EngineRet::FdWriteDone(FdWriteDone::new(call.fd(), 0));
+                        Self::drive_exchange(request, reply, &mut report)?;
+                    } else {
+                        for chunk in bytes.chunks(WASIP1_STREAM_CHUNK_CAPACITY) {
+                            let request = EngineReq::FdWrite(
+                                FdWrite::new_with_lease(call.fd(), 1, chunk)
+                                    .map_err(|_| CoreWasip1HostRunError::Unsupported("fd_write"))?,
+                            );
+                            let reply = EngineRet::FdWriteDone(FdWriteDone::new(
+                                call.fd(),
+                                chunk.len().min(u8::MAX as usize) as u8,
+                            ));
+                            Self::drive_exchange(request, reply, &mut report)?;
+                        }
                     }
                     match call.fd() {
                         1 => report.stdout.extend_from_slice(&bytes),
@@ -248,11 +292,6 @@ impl<'a> CoreWasip1HostRunner<'a> {
                             }
                         }
                     }
-                    let reply = EngineRet::FdWriteDone(FdWriteDone::new(
-                        call.fd(),
-                        total.min(u8::MAX as u32) as u8,
-                    ));
-                    self.record_reply(reply, &mut report);
                     self.guest
                         .complete_fd_write(call, WASI_ERRNO_SUCCESS as u32)?;
                 }
@@ -286,21 +325,19 @@ impl<'a> CoreWasip1HostRunner<'a> {
                         FdRead::new_with_lease(fd, 1, max_len.min(u8::MAX as usize) as u8)
                             .map_err(|_| CoreWasip1HostRunError::Unsupported("fd_read"))?,
                     );
-                    self.record_request(request, &mut report);
                     let reply = EngineRet::FdReadDone(
                         FdReadDone::new_with_lease(fd, 1, &bytes)
                             .map_err(|_| CoreWasip1HostRunError::Unsupported("fd_read reply"))?,
                     );
-                    self.record_reply(reply, &mut report);
+                    Self::drive_exchange(request, reply, &mut report)?;
                     self.guest
                         .complete_fd_read(call, &bytes, WASI_ERRNO_SUCCESS as u32)?;
                 }
                 CoreWasip1Trap::FdFdstatGet(call) => {
                     let request = EngineReq::FdFdstatGet(FdRequest::new(call.fd()));
-                    self.record_request(request, &mut report);
                     let rights = self.fd_rights(call.fd()).unwrap_or(MemRights::Read);
                     let reply = EngineRet::FdStat(FdStat::new(call.fd(), rights));
-                    self.record_reply(reply, &mut report);
+                    Self::drive_exchange(request, reply, &mut report)?;
                     self.guest.complete_fd_fdstat_get(
                         call,
                         CoreWasip1FdStat::new(self.fd_filetype(call.fd()), 0, u64::MAX, u64::MAX),
@@ -309,21 +346,19 @@ impl<'a> CoreWasip1HostRunner<'a> {
                 }
                 CoreWasip1Trap::FdClose(call) => {
                     let request = EngineReq::FdClose(FdRequest::new(call.fd()));
-                    self.record_request(request, &mut report);
                     if call.fd() > 2 && call.fd() != HOST_ROOT_FD {
                         let _ = self.ledger.fd_view_mut().close_current(call.fd());
                     }
                     let reply = EngineRet::FdClosed(FdClosed::new(call.fd()));
-                    self.record_reply(reply, &mut report);
+                    Self::drive_exchange(request, reply, &mut report)?;
                     self.guest.complete_host_call(WASI_ERRNO_SUCCESS as u32)?;
                 }
                 CoreWasip1Trap::ClockResGet(call) => {
                     let request = EngineReq::ClockResGet(ClockResGet::new(call.clock_id() as u8));
-                    self.record_request(request, &mut report);
                     let reply = EngineRet::ClockResolution(ClockResolution::new(
                         HOST_CLOCK_RESOLUTION_NANOS,
                     ));
-                    self.record_reply(reply, &mut report);
+                    Self::drive_exchange(request, reply, &mut report)?;
                     self.guest.complete_clock_res_get(
                         call,
                         HOST_CLOCK_RESOLUTION_NANOS,
@@ -335,9 +370,8 @@ impl<'a> CoreWasip1HostRunner<'a> {
                         call.clock_id() as u8,
                         call.precision(),
                     ));
-                    self.record_request(request, &mut report);
                     let reply = EngineRet::ClockTime(ClockNow::new(HOST_CLOCK_NOW_NANOS));
-                    self.record_reply(reply, &mut report);
+                    Self::drive_exchange(request, reply, &mut report)?;
                     self.guest.complete_clock_time_get(
                         call,
                         HOST_CLOCK_NOW_NANOS,
@@ -347,9 +381,8 @@ impl<'a> CoreWasip1HostRunner<'a> {
                 CoreWasip1Trap::PollOneoff(call) => {
                     let timeout = self.guest.poll_oneoff_delay_ticks(call).unwrap_or(0);
                     let request = EngineReq::PollOneoff(PollOneoff::new(timeout));
-                    self.record_request(request, &mut report);
                     let reply = EngineRet::PollReady(PollReady::new(1));
-                    self.record_reply(reply, &mut report);
+                    Self::drive_exchange(request, reply, &mut report)?;
                     self.guest
                         .complete_poll_oneoff(call, 1, WASI_ERRNO_SUCCESS as u32)?;
                 }
@@ -360,7 +393,6 @@ impl<'a> CoreWasip1HostRunner<'a> {
                         RandomGet::new_with_lease(1, len.min(WASIP1_STREAM_CHUNK_CAPACITY) as u8)
                             .map_err(|_| CoreWasip1HostRunError::Unsupported("random_get"))?,
                     );
-                    self.record_request(request, &mut report);
                     let reply = EngineRet::RandomDone(
                         RandomDone::new_with_lease(
                             1,
@@ -368,16 +400,20 @@ impl<'a> CoreWasip1HostRunner<'a> {
                         )
                         .map_err(|_| CoreWasip1HostRunError::Unsupported("random reply"))?,
                     );
-                    self.record_reply(reply, &mut report);
+                    Self::drive_exchange(request, reply, &mut report)?;
                     self.guest
                         .complete_random_get(call, &bytes, WASI_ERRNO_SUCCESS as u32)?;
                 }
                 CoreWasip1Trap::SchedYield => {
-                    self.record_request(EngineReq::Yield, &mut report);
-                    self.record_reply(EngineRet::Yielded, &mut report);
+                    Self::drive_exchange(EngineReq::Yield, EngineRet::Yielded, &mut report)?;
                     self.guest.complete_sched_yield(WASI_ERRNO_SUCCESS as u32)?;
                 }
                 CoreWasip1Trap::ArgsSizesGet(call) => {
+                    Self::drive_exchange(
+                        EngineReq::ArgsSizesGet(ArgsSizesGet::new()),
+                        EngineRet::ArgsSizes(ArgsSizes::new(0, 0)),
+                        &mut report,
+                    )?;
                     self.guest
                         .complete_args_sizes_get(call, 0, 0, WASI_ERRNO_SUCCESS as u32)?;
                 }
@@ -386,16 +422,20 @@ impl<'a> CoreWasip1HostRunner<'a> {
                         ArgsGet::new_with_lease(1, 0)
                             .map_err(|_| CoreWasip1HostRunError::Unsupported("args_get"))?,
                     );
-                    self.record_request(request, &mut report);
                     let reply = EngineRet::ArgsDone(
                         ArgsDone::new_with_lease(1, &[])
                             .map_err(|_| CoreWasip1HostRunError::Unsupported("args reply"))?,
                     );
-                    self.record_reply(reply, &mut report);
+                    Self::drive_exchange(request, reply, &mut report)?;
                     self.guest
                         .complete_args_get(call, &[], WASI_ERRNO_SUCCESS as u32)?;
                 }
                 CoreWasip1Trap::EnvironSizesGet(call) => {
+                    Self::drive_exchange(
+                        EngineReq::EnvironSizesGet(EnvironSizesGet::new()),
+                        EngineRet::EnvironSizes(EnvironSizes::new(0, 0)),
+                        &mut report,
+                    )?;
                     self.guest
                         .complete_environ_sizes_get(call, 0, 0, WASI_ERRNO_SUCCESS as u32)?;
                 }
@@ -404,12 +444,11 @@ impl<'a> CoreWasip1HostRunner<'a> {
                         EnvironGet::new_with_lease(1, 0)
                             .map_err(|_| CoreWasip1HostRunError::Unsupported("environ_get"))?,
                     );
-                    self.record_request(request, &mut report);
                     let reply = EngineRet::EnvironDone(
                         EnvironDone::new_with_lease(1, &[])
                             .map_err(|_| CoreWasip1HostRunError::Unsupported("environ reply"))?,
                     );
-                    self.record_reply(reply, &mut report);
+                    Self::drive_exchange(request, reply, &mut report)?;
                     self.guest
                         .complete_environ_get(call, &[], WASI_ERRNO_SUCCESS as u32)?;
                 }
@@ -427,7 +466,7 @@ impl<'a> CoreWasip1HostRunner<'a> {
                 }
                 CoreWasip1Trap::ProcExit(status) => {
                     let request = EngineReq::ProcExit(ProcExitStatus::new(status as u8));
-                    self.record_request(request, &mut report);
+                    Self::drive_one_way(request, &mut report)?;
                     report.exit_status = Some(status);
                     return Ok(report);
                 }
@@ -476,6 +515,15 @@ impl<'a> CoreWasip1HostRunner<'a> {
                 let path = self.guest.path_bytes(call)?;
                 let new_fd = self.next_fd;
                 let rights_base = call.arg_i64(5)?;
+                let request = EngineReq::PathOpen(
+                    crate::choreography::protocol::PathOpen::new(
+                        call.fd()?,
+                        0,
+                        rights_base,
+                        path.as_bytes(),
+                    )
+                    .map_err(|_| CoreWasip1HostRunError::Unsupported("path_open request"))?,
+                );
                 match self.fs.open_wasip1_path_with_ledger(
                     &mut self.ledger,
                     call.fd()?,
@@ -486,6 +534,13 @@ impl<'a> CoreWasip1HostRunner<'a> {
                     Ok(_) => {
                         self.next_fd = self.next_fd.saturating_add(1);
                         report.choreofs_open_count = report.choreofs_open_count.saturating_add(1);
+                        Self::drive_exchange(
+                            request,
+                            EngineRet::PathOpened(crate::choreography::protocol::PathOpened::new(
+                                new_fd, 0,
+                            )),
+                            report,
+                        )?;
                         self.guest.complete_path_open(
                             call,
                             new_fd as u32,
@@ -626,7 +681,6 @@ impl<'a> CoreWasip1HostRunner<'a> {
                     return self.reject_network_object_import(call, WASI_ERRNO_NOTCAPABLE, report);
                 }
                 let request = self.guest.socket_as_engine_req(call, 1)?;
-                self.record_request(request, report);
                 let payload = self.guest.sock_send_payload(call)?;
                 self.network_tx.push((fd, payload.as_bytes().to_vec()));
                 report.network_send_count = report.network_send_count.saturating_add(1);
@@ -634,7 +688,7 @@ impl<'a> CoreWasip1HostRunner<'a> {
                     fd,
                     payload.as_bytes().len().min(u8::MAX as usize) as u8,
                 ));
-                self.record_reply(reply, report);
+                Self::drive_exchange(request, reply, report)?;
                 self.guest.complete_sock_send(
                     call,
                     payload.as_bytes().len() as u32,
@@ -650,7 +704,6 @@ impl<'a> CoreWasip1HostRunner<'a> {
                     return self.reject_network_object_import(call, WASI_ERRNO_NOTCAPABLE, report);
                 }
                 let request = self.guest.socket_as_engine_req(call, 1)?;
-                self.record_request(request, report);
                 let (_, max_len) = self.guest.sock_recv_iovec(call)?;
                 let bytes = self.dequeue_network_rx(fd, max_len as usize);
                 report.network_recv_count = report.network_recv_count.saturating_add(1);
@@ -658,7 +711,7 @@ impl<'a> CoreWasip1HostRunner<'a> {
                     FdReadDone::new_with_lease(fd, 1, &bytes)
                         .map_err(|_| CoreWasip1HostRunError::Unsupported("sock_recv reply"))?,
                 );
-                self.record_reply(reply, report);
+                Self::drive_exchange(request, reply, report)?;
                 self.guest
                     .complete_sock_recv(call, &bytes, 0, WASI_ERRNO_SUCCESS as u32)?;
             }
@@ -674,9 +727,8 @@ impl<'a> CoreWasip1HostRunner<'a> {
                     return self.reject_network_object_import(call, WASI_ERRNO_NOTCAPABLE, report);
                 }
                 let request = EngineReq::FdClose(FdRequest::new(fd));
-                self.record_request(request, report);
                 let reply = EngineRet::FdClosed(FdClosed::new(fd));
-                self.record_reply(reply, report);
+                Self::drive_exchange(request, reply, report)?;
                 let _ = self.ledger.fd_view_mut().close_current(fd);
                 self.guest
                     .complete_sock_shutdown(call, WASI_ERRNO_SUCCESS as u32)?;
@@ -771,12 +823,279 @@ impl<'a> CoreWasip1HostRunner<'a> {
         Ok(())
     }
 
-    fn record_request(&self, request: EngineReq, report: &mut CoreWasip1HostRunReport) {
-        report.engine_trace.push(request);
+    fn drive_exchange(
+        request: EngineReq,
+        reply: EngineRet,
+        report: &mut CoreWasip1HostRunReport,
+    ) -> Result<(), CoreWasip1HostRunError> {
+        match (request, reply) {
+            (EngineReq::LogU32(_), EngineRet::Logged(_)) => {
+                Self::drive_pair::<LABEL_ENGINE_REQ, LABEL_ENGINE_RET>(request, reply, report)
+            }
+            (EngineReq::Yield, EngineRet::Yielded) => {
+                Self::drive_pair::<LABEL_YIELD_REQ, LABEL_YIELD_RET>(request, reply, report)
+            }
+            (EngineReq::Wasip1Stdout(_), EngineRet::Wasip1StdoutWritten(_)) => {
+                Self::drive_pair::<LABEL_WASIP1_STDOUT, LABEL_WASIP1_STDOUT_RET>(
+                    request, reply, report,
+                )
+            }
+            (EngineReq::Wasip1Stderr(_), EngineRet::Wasip1StderrWritten(_)) => {
+                Self::drive_pair::<LABEL_WASIP1_STDERR, LABEL_WASIP1_STDERR_RET>(
+                    request, reply, report,
+                )
+            }
+            (EngineReq::Wasip1Stdin(_), EngineRet::Wasip1StdinRead(_)) => {
+                Self::drive_pair::<LABEL_WASIP1_STDIN, LABEL_WASIP1_STDIN_RET>(
+                    request, reply, report,
+                )
+            }
+            (EngineReq::Wasip1ClockNow, EngineRet::Wasip1ClockNow(_)) => {
+                Self::drive_pair::<LABEL_WASIP1_CLOCK_NOW, LABEL_WASIP1_CLOCK_NOW_RET>(
+                    request, reply, report,
+                )
+            }
+            (EngineReq::Wasip1RandomSeed, EngineRet::Wasip1RandomSeed(_)) => {
+                Self::drive_pair::<LABEL_WASIP1_RANDOM_SEED, LABEL_WASIP1_RANDOM_SEED_RET>(
+                    request, reply, report,
+                )
+            }
+            (EngineReq::FdWrite(_), EngineRet::FdWriteDone(_)) => {
+                Self::drive_pair::<LABEL_WASI_FD_WRITE, LABEL_WASI_FD_WRITE_RET>(
+                    request, reply, report,
+                )
+            }
+            (EngineReq::FdRead(_), EngineRet::FdReadDone(_)) => {
+                Self::drive_pair::<LABEL_WASI_FD_READ, LABEL_WASI_FD_READ_RET>(
+                    request, reply, report,
+                )
+            }
+            (EngineReq::FdFdstatGet(_), EngineRet::FdStat(_)) => {
+                Self::drive_pair::<LABEL_WASI_FD_FDSTAT_GET, LABEL_WASI_FD_FDSTAT_GET_RET>(
+                    request, reply, report,
+                )
+            }
+            (EngineReq::FdClose(_), EngineRet::FdClosed(_)) => Self::drive_pair::<
+                LABEL_WASI_FD_CLOSE,
+                LABEL_WASI_FD_CLOSE_RET,
+            >(request, reply, report),
+            (EngineReq::ClockResGet(_), EngineRet::ClockResolution(_)) => {
+                Self::drive_pair::<LABEL_WASI_CLOCK_RES_GET, LABEL_WASI_CLOCK_RES_GET_RET>(
+                    request, reply, report,
+                )
+            }
+            (EngineReq::ClockTimeGet(_), EngineRet::ClockTime(_)) => {
+                Self::drive_pair::<LABEL_WASI_CLOCK_TIME_GET, LABEL_WASI_CLOCK_TIME_GET_RET>(
+                    request, reply, report,
+                )
+            }
+            (EngineReq::PollOneoff(_), EngineRet::PollReady(_)) => {
+                Self::drive_pair::<LABEL_WASI_POLL_ONEOFF, LABEL_WASI_POLL_ONEOFF_RET>(
+                    request, reply, report,
+                )
+            }
+            (EngineReq::RandomGet(_), EngineRet::RandomDone(_)) => {
+                Self::drive_pair::<LABEL_WASI_RANDOM_GET, LABEL_WASI_RANDOM_GET_RET>(
+                    request, reply, report,
+                )
+            }
+            (EngineReq::ArgsSizesGet(_), EngineRet::ArgsSizes(_)) => {
+                Self::drive_pair::<LABEL_WASI_ARGS_SIZES_GET, LABEL_WASI_ARGS_SIZES_GET_RET>(
+                    request, reply, report,
+                )
+            }
+            (EngineReq::ArgsGet(_), EngineRet::ArgsDone(_)) => Self::drive_pair::<
+                LABEL_WASI_ARGS_GET,
+                LABEL_WASI_ARGS_GET_RET,
+            >(request, reply, report),
+            (EngineReq::EnvironSizesGet(_), EngineRet::EnvironSizes(_)) => {
+                Self::drive_pair::<LABEL_WASI_ENVIRON_SIZES_GET, LABEL_WASI_ENVIRON_SIZES_GET_RET>(
+                    request, reply, report,
+                )
+            }
+            (EngineReq::EnvironGet(_), EngineRet::EnvironDone(_)) => {
+                Self::drive_pair::<LABEL_WASI_ENVIRON_GET, LABEL_WASI_ENVIRON_GET_RET>(
+                    request, reply, report,
+                )
+            }
+            (EngineReq::PathOpen(_), EngineRet::PathOpened(_)) => {
+                Self::drive_pair::<LABEL_WASI_PATH_OPEN, LABEL_WASI_PATH_OPEN_RET>(
+                    request, reply, report,
+                )
+            }
+            (EngineReq::TimerSleepUntil(_), EngineRet::TimerSleepDone(_)) => {
+                Self::drive_pair::<LABEL_TIMER_SLEEP_UNTIL, LABEL_TIMER_SLEEP_DONE>(
+                    request, reply, report,
+                )
+            }
+            (EngineReq::GpioSet(_), EngineRet::GpioSetDone(_)) => {
+                Self::drive_pair::<LABEL_GPIO_SET, LABEL_GPIO_SET_DONE>(request, reply, report)
+            }
+            _ => Err(CoreWasip1HostRunError::Unsupported(
+                "host/full localside request/reply mismatch",
+            )),
+        }
     }
 
-    fn record_reply(&self, reply: EngineRet, report: &mut CoreWasip1HostRunReport) {
+    fn drive_one_way(
+        request: EngineReq,
+        report: &mut CoreWasip1HostRunReport,
+    ) -> Result<(), CoreWasip1HostRunError> {
+        match request {
+            EngineReq::ProcExit(_) => {
+                Self::drive_send_only::<LABEL_WASI_PROC_EXIT>(request, report)
+            }
+            EngineReq::Wasip1Exit(_) => Self::drive_send_only::<LABEL_WASIP1_EXIT>(request, report),
+            _ => Err(CoreWasip1HostRunError::Unsupported(
+                "host/full localside one-way request mismatch",
+            )),
+        }
+    }
+
+    fn drive_pair<const REQ_LABEL: u8, const RET_LABEL: u8>(
+        request: EngineReq,
+        reply: EngineRet,
+        report: &mut CoreWasip1HostRunReport,
+    ) -> Result<(), CoreWasip1HostRunError> {
+        let program = g::seq(
+            g::send::<Role<1>, Role<0>, Msg<REQ_LABEL, EngineReq>, 1>(),
+            g::send::<Role<0>, Role<1>, Msg<RET_LABEL, EngineRet>, 1>(),
+        );
+        let kernel_program: RoleProgram<0> = project(&program);
+        let engine_program: RoleProgram<1> = project(&program);
+        Self::drive_projected_pair::<REQ_LABEL, RET_LABEL>(
+            &kernel_program,
+            &engine_program,
+            request,
+            reply,
+            report,
+        )?;
+        report.engine_trace.push(request);
         report.engine_replies.push(reply);
+        report.localside_drive_count = report.localside_drive_count.saturating_add(1);
+        Ok(())
+    }
+
+    fn drive_send_only<const REQ_LABEL: u8>(
+        request: EngineReq,
+        report: &mut CoreWasip1HostRunReport,
+    ) -> Result<(), CoreWasip1HostRunError> {
+        let program = g::send::<Role<1>, Role<0>, Msg<REQ_LABEL, EngineReq>, 1>();
+        let kernel_program: RoleProgram<0> = project(&program);
+        let engine_program: RoleProgram<1> = project(&program);
+        Self::drive_projected_send::<REQ_LABEL>(&kernel_program, &engine_program, request, report)?;
+        report.engine_trace.push(request);
+        report.localside_drive_count = report.localside_drive_count.saturating_add(1);
+        Ok(())
+    }
+
+    fn drive_projected_pair<const REQ_LABEL: u8, const RET_LABEL: u8>(
+        kernel_program: &RoleProgram<0>,
+        engine_program: &RoleProgram<1>,
+        request: EngineReq,
+        reply: EngineRet,
+        report: &CoreWasip1HostRunReport,
+    ) -> Result<(), CoreWasip1HostRunError> {
+        let backend = HostQueueBackend::new();
+        let clock = CounterClock::new();
+        let mut tap = [TapEvent::zero(); 128];
+        let mut slab = std::vec![0u8; 192 * 1024];
+        let cluster = HostFullKit::new(&clock);
+        let rv = cluster
+            .add_rendezvous_from_config(
+                Config::new(&mut tap, slab.as_mut_slice()).with_universe(EngineLabelUniverse),
+                SioTransport::new(&backend),
+            )
+            .map_err(|_| CoreWasip1HostRunError::Unsupported("host/full localside rendezvous"))?;
+        let sid = SessionId::new(40_000u32.saturating_add(report.localside_drive_count));
+        let mut kernel: Endpoint<'_, 0> = cluster
+            .enter(rv, sid, kernel_program, NoBinding)
+            .map_err(|_| CoreWasip1HostRunError::Unsupported("host/full localside kernel"))?;
+        let mut engine: Endpoint<'_, 1> = cluster
+            .enter(rv, sid, engine_program, NoBinding)
+            .map_err(|_| CoreWasip1HostRunError::Unsupported("host/full localside engine"))?;
+
+        run_current_task(async {
+            (engine
+                .flow::<Msg<REQ_LABEL, EngineReq>>()
+                .map_err(|_| CoreWasip1HostRunError::Unsupported("host/full request phase"))?
+                .send(&request))
+            .await
+            .map_err(|_| CoreWasip1HostRunError::Unsupported("host/full request send"))?;
+
+            let received = (kernel.recv::<Msg<REQ_LABEL, EngineReq>>())
+                .await
+                .map_err(|_| CoreWasip1HostRunError::Unsupported("host/full request recv"))?;
+            if received != request {
+                return Err(CoreWasip1HostRunError::Unsupported(
+                    "host/full request decode mismatch",
+                ));
+            }
+
+            (kernel
+                .flow::<Msg<RET_LABEL, EngineRet>>()
+                .map_err(|_| CoreWasip1HostRunError::Unsupported("host/full reply phase"))?
+                .send(&reply))
+            .await
+            .map_err(|_| CoreWasip1HostRunError::Unsupported("host/full reply send"))?;
+
+            let received = (engine.recv::<Msg<RET_LABEL, EngineRet>>())
+                .await
+                .map_err(|_| CoreWasip1HostRunError::Unsupported("host/full reply recv"))?;
+            if received != reply {
+                return Err(CoreWasip1HostRunError::Unsupported(
+                    "host/full reply decode mismatch",
+                ));
+            }
+
+            Ok(())
+        })
+    }
+
+    fn drive_projected_send<const REQ_LABEL: u8>(
+        kernel_program: &RoleProgram<0>,
+        engine_program: &RoleProgram<1>,
+        request: EngineReq,
+        report: &CoreWasip1HostRunReport,
+    ) -> Result<(), CoreWasip1HostRunError> {
+        let backend = HostQueueBackend::new();
+        let clock = CounterClock::new();
+        let mut tap = [TapEvent::zero(); 128];
+        let mut slab = std::vec![0u8; 192 * 1024];
+        let cluster = HostFullKit::new(&clock);
+        let rv = cluster
+            .add_rendezvous_from_config(
+                Config::new(&mut tap, slab.as_mut_slice()).with_universe(EngineLabelUniverse),
+                SioTransport::new(&backend),
+            )
+            .map_err(|_| CoreWasip1HostRunError::Unsupported("host/full localside rendezvous"))?;
+        let sid = SessionId::new(50_000u32.saturating_add(report.localside_drive_count));
+        let mut kernel: Endpoint<'_, 0> = cluster
+            .enter(rv, sid, kernel_program, NoBinding)
+            .map_err(|_| CoreWasip1HostRunError::Unsupported("host/full localside kernel"))?;
+        let mut engine: Endpoint<'_, 1> = cluster
+            .enter(rv, sid, engine_program, NoBinding)
+            .map_err(|_| CoreWasip1HostRunError::Unsupported("host/full localside engine"))?;
+
+        run_current_task(async {
+            (engine
+                .flow::<Msg<REQ_LABEL, EngineReq>>()
+                .map_err(|_| CoreWasip1HostRunError::Unsupported("host/full request phase"))?
+                .send(&request))
+            .await
+            .map_err(|_| CoreWasip1HostRunError::Unsupported("host/full request send"))?;
+
+            let received = (kernel.recv::<Msg<REQ_LABEL, EngineReq>>())
+                .await
+                .map_err(|_| CoreWasip1HostRunError::Unsupported("host/full request recv"))?;
+            if received != request {
+                return Err(CoreWasip1HostRunError::Unsupported(
+                    "host/full request decode mismatch",
+                ));
+            }
+
+            Ok(())
+        })
     }
 
     fn fd_write_bytes(

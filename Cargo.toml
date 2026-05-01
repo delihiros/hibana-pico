@@ -12,7 +12,7 @@ rp2040-boot2 = "0.3.0"
 default = []
 
 # Profile bundles. These are Cargo features, not protocol authority.
-profile-rp2040-baker-min = [
+profile-rp2040-pico-min = [
     "platform-rp2040",
     "machine-sio",
     "machine-timer",
@@ -29,7 +29,26 @@ profile-rp2040-baker-min = [
     "kernel-interrupt-resolver",
     "kernel-budget",
 ]
-profile-pico2w-swarm-min = [
+profile-rp2040-picow-swarm-min = [
+    "platform-rp2040",
+    "machine-sio",
+    "machine-timer",
+    "machine-gpio",
+    "machine-uart",
+    "machine-cyw43439",
+    "machine-cyw43439-real-gspi",
+    "wasm-engine-core",
+    "wasip1-sys-fd-write",
+    "wasip1-sys-clock-time-get",
+    "wasip1-sys-poll-oneoff",
+    "wasip1-sys-proc-exit",
+    "wasip1-ctrl-common",
+    "wasip1-ledger-pico-min",
+    "swarm-frame",
+    "swarm-remote-fd",
+    "swarm-datagram-fd",
+]
+profile-rp2350-pico2w-swarm-min = [
     "platform-rp2350",
     "machine-sio",
     "machine-timer",
@@ -188,11 +207,41 @@ measure-latency = []
 uart-log = []
 probe-debug = []
 
-# Demo artifact selection. These select guest artifacts only.
+# Demo artifact selection. Most options select guest artifacts only. The
+# ordinary-std Baker demo also selects the smallest engine/syscall capacity that
+# Rust std startup needs on Pico-class firmware.
 embed-wasip1-artifacts = []
 baker-bad-order-demo = []
 baker-chaser-demo = []
-baker-ordinary-std-demo = []
+baker-ordinary-std-demo = [
+    "wasm-engine-wasip1-std-profile",
+    "wasip1-sys-args-env",
+    "wasip1-ledger-embedded-std",
+]
+baker-choreofs-demo = [
+    "wasm-engine-wasip1-std-profile",
+    "wasip1-sys-args-env",
+    "wasip1-sys-path-minimal",
+    "wasip1-ledger-embedded-std",
+]
+baker-choreofs-bad-path-demo = [
+    "wasm-engine-wasip1-std-profile",
+    "wasip1-sys-args-env",
+    "wasip1-sys-path-minimal",
+    "wasip1-ledger-embedded-std",
+]
+baker-choreofs-bad-payload-demo = [
+    "wasm-engine-wasip1-std-profile",
+    "wasip1-sys-args-env",
+    "wasip1-sys-path-minimal",
+    "wasip1-ledger-embedded-std",
+]
+baker-choreofs-wrong-object-demo = [
+    "wasm-engine-wasip1-std-profile",
+    "wasip1-sys-args-env",
+    "wasip1-sys-path-minimal",
+    "wasip1-ledger-embedded-std",
+]
 baker-invalid-fd-demo = []
 baker-bad-payload-demo = []
 

@@ -20,13 +20,14 @@ use crate::choreography::protocol::{
     LABEL_WASI_CLOCK_RES_GET, LABEL_WASI_CLOCK_RES_GET_RET, LABEL_WASI_FD_CLOSE,
     LABEL_WASI_FD_CLOSE_RET, LABEL_WASI_FD_FDSTAT_GET, LABEL_WASI_FD_FDSTAT_GET_RET,
     LABEL_WASI_FD_READ, LABEL_WASI_FD_READ_RET, LABEL_WASI_FD_WRITE, LABEL_WASI_FD_WRITE_RET,
-    LABEL_WASI_POLL_ONEOFF, LABEL_WASI_POLL_ONEOFF_RET, LABEL_WASI_PROC_EXIT,
-    LABEL_WASIP1_CLOCK_NOW, LABEL_WASIP1_CLOCK_NOW_RET, LABEL_WASIP1_EXIT,
-    LABEL_WASIP1_RANDOM_SEED, LABEL_WASIP1_RANDOM_SEED_RET, LABEL_WASIP1_STDERR,
-    LABEL_WASIP1_STDERR_RET, LABEL_WASIP1_STDIN, LABEL_WASIP1_STDIN_RET, LABEL_WASIP1_STDOUT,
-    LABEL_WASIP1_STDOUT_RET, LABEL_YIELD_REQ, LABEL_YIELD_RET, MemBorrow, MemCommit, MemFence,
-    MemReadGrantControl, MemRelease, MemWriteGrantControl, POLICY_BAKER_TRAFFIC_LOOP,
-    TimerSleepDone, TimerSleepUntil, UartWrite, UartWriteDone,
+    LABEL_WASI_PATH_OPEN, LABEL_WASI_PATH_OPEN_RET, LABEL_WASI_POLL_ONEOFF,
+    LABEL_WASI_POLL_ONEOFF_RET, LABEL_WASI_PROC_EXIT, LABEL_WASIP1_CLOCK_NOW,
+    LABEL_WASIP1_CLOCK_NOW_RET, LABEL_WASIP1_EXIT, LABEL_WASIP1_RANDOM_SEED,
+    LABEL_WASIP1_RANDOM_SEED_RET, LABEL_WASIP1_STDERR, LABEL_WASIP1_STDERR_RET, LABEL_WASIP1_STDIN,
+    LABEL_WASIP1_STDIN_RET, LABEL_WASIP1_STDOUT, LABEL_WASIP1_STDOUT_RET, LABEL_YIELD_REQ,
+    LABEL_YIELD_RET, MemBorrow, MemCommit, MemFence, MemReadGrantControl, MemRelease,
+    MemWriteGrantControl, POLICY_BAKER_TRAFFIC_LOOP, TimerSleepDone, TimerSleepUntil, UartWrite,
+    UartWriteDone,
 };
 
 macro_rules! seq_chain {
@@ -47,6 +48,18 @@ macro_rules! baker_led_fd_write_cycle {
             g::send::<Role<0>, Role<2>, Msg<LABEL_GPIO_SET, GpioSet>, 1>(),
             g::send::<Role<2>, Role<0>, Msg<LABEL_GPIO_SET_DONE, GpioSet>, 1>(),
             g::send::<Role<0>, Role<1>, Msg<LABEL_WASI_FD_WRITE_RET, EngineRet>, 1>(),
+            g::send::<Role<1>, Role<0>, Msg<LABEL_MEM_RELEASE, MemRelease>, 1>(),
+        )
+    };
+}
+
+macro_rules! baker_led_path_open_cycle {
+    () => {
+        seq_chain!(
+            g::send::<Role<1>, Role<0>, Msg<LABEL_MEM_BORROW_READ, MemBorrow>, 1>(),
+            g::send::<Role<0>, Role<1>, MemReadGrantControl, 1>(),
+            g::send::<Role<1>, Role<0>, Msg<LABEL_WASI_PATH_OPEN, EngineReq>, 1>(),
+            g::send::<Role<0>, Role<1>, Msg<LABEL_WASI_PATH_OPEN_RET, EngineRet>, 1>(),
             g::send::<Role<1>, Role<0>, Msg<LABEL_MEM_RELEASE, MemRelease>, 1>(),
         )
     };
@@ -99,6 +112,28 @@ macro_rules! baker_led_blink_program {
     }};
 }
 
+macro_rules! baker_led_choreofs_blink_program {
+    () => {{
+        let continue_arm = g::send::<Role<1>, Role<1>, BakerTrafficLoopContinueControl, 1>()
+            .policy::<POLICY_BAKER_TRAFFIC_LOOP>();
+        let break_arm = g::send::<Role<1>, Role<1>, BakerTrafficLoopBreakControl, 1>()
+            .policy::<POLICY_BAKER_TRAFFIC_LOOP>();
+        seq_chain!(
+            g::send::<Role<0>, Role<1>, BudgetRunMsg, 1>(),
+            baker_led_path_open_cycle!(),
+            baker_led_path_open_cycle!(),
+            baker_led_path_open_cycle!(),
+            g::route(
+                g::seq(continue_arm, baker_led_traffic_light_step_program!()),
+                g::seq(
+                    break_arm,
+                    g::send::<Role<1>, Role<0>, Msg<LABEL_WASI_PROC_EXIT, EngineReq>, 1>(),
+                )
+            ),
+        )
+    }};
+}
+
 pub const BAKER_LED_FD_WRITE_KERNEL_PROGRAM: RoleProgram<0> =
     project(&baker_led_fd_write_two_cycles_program!());
 pub const BAKER_LED_FD_WRITE_ENGINE_PROGRAM: RoleProgram<1> =
@@ -110,6 +145,14 @@ pub const BAKER_LED_BLINK_KERNEL_PROGRAM: RoleProgram<0> = project(&baker_led_bl
 pub const BAKER_LED_BLINK_ENGINE_PROGRAM: RoleProgram<1> = project(&baker_led_blink_program!());
 pub const BAKER_LED_BLINK_GPIO_PROGRAM: RoleProgram<2> = project(&baker_led_blink_program!());
 pub const BAKER_LED_BLINK_TIMER_PROGRAM: RoleProgram<3> = project(&baker_led_blink_program!());
+pub const BAKER_LED_CHOREOFS_BLINK_KERNEL_PROGRAM: RoleProgram<0> =
+    project(&baker_led_choreofs_blink_program!());
+pub const BAKER_LED_CHOREOFS_BLINK_ENGINE_PROGRAM: RoleProgram<1> =
+    project(&baker_led_choreofs_blink_program!());
+pub const BAKER_LED_CHOREOFS_BLINK_GPIO_PROGRAM: RoleProgram<2> =
+    project(&baker_led_choreofs_blink_program!());
+pub const BAKER_LED_CHOREOFS_BLINK_TIMER_PROGRAM: RoleProgram<3> =
+    project(&baker_led_choreofs_blink_program!());
 
 /// WASI stdout over a read lease:
 /// borrow-read -> grant -> fd/stdout write -> write-ret -> release.
@@ -290,6 +333,23 @@ pub fn baker_led_blink_roles() -> (
         BAKER_LED_BLINK_ENGINE_PROGRAM,
         BAKER_LED_BLINK_GPIO_PROGRAM,
         BAKER_LED_BLINK_TIMER_PROGRAM,
+    )
+}
+
+/// Baker link ChoreoFS LED demo. The guest first opens LED resource paths
+/// through WASI `path_open`, so the GPIO fds are minted from ChoreoFS object
+/// identities before the same fd_write/poll loop begins.
+pub fn baker_led_choreofs_blink_roles() -> (
+    RoleProgram<0>,
+    RoleProgram<1>,
+    RoleProgram<2>,
+    RoleProgram<3>,
+) {
+    (
+        BAKER_LED_CHOREOFS_BLINK_KERNEL_PROGRAM,
+        BAKER_LED_CHOREOFS_BLINK_ENGINE_PROGRAM,
+        BAKER_LED_CHOREOFS_BLINK_GPIO_PROGRAM,
+        BAKER_LED_CHOREOFS_BLINK_TIMER_PROGRAM,
     )
 }
 

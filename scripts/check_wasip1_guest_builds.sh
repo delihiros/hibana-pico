@@ -27,9 +27,14 @@ embedded_led_bins=(
   wasip1-led-fd-write
   wasip1-led-blink
   wasip1-led-chaser
+  wasip1-led-ordinary-std-chaser
   wasip1-led-bad-order
   wasip1-led-invalid-fd
   wasip1-led-bad-payload
+  wasip1-led-choreofs-open
+  wasip1-led-choreofs-bad-path
+  wasip1-led-choreofs-bad-payload
+  wasip1-led-choreofs-wrong-object
 )
 
 for bin in "${embedded_led_bins[@]}"; do
@@ -63,6 +68,10 @@ artifacts=(
   wasip1-led-bad-order
   wasip1-led-invalid-fd
   wasip1-led-bad-payload
+  wasip1-led-choreofs-open
+  wasip1-led-choreofs-bad-path
+  wasip1-led-choreofs-bad-payload
+  wasip1-led-choreofs-wrong-object
   wasip1-led-ordinary-std-chaser
   wasip1-std-core-coverage
   wasip1-std-choreofs-read
@@ -142,6 +151,25 @@ if ! rg -a -q 'fd_write' "$artifact_dir/wasip1-led-ordinary-std-chaser.wasm"; th
 fi
 if ! rg -a -q 'poll_oneoff' "$artifact_dir/wasip1-led-ordinary-std-chaser.wasm"; then
   echo "WASI P1 LED ordinary std chaser artifact lacks poll_oneoff: $artifact_dir/wasip1-led-ordinary-std-chaser.wasm" >&2
+  exit 1
+fi
+for choreofs_led in \
+  wasip1-led-choreofs-open \
+  wasip1-led-choreofs-bad-path \
+  wasip1-led-choreofs-bad-payload \
+  wasip1-led-choreofs-wrong-object
+do
+  if ! rg -a -q 'path_open' "$artifact_dir/$choreofs_led.wasm"; then
+    echo "WASI P1 Baker ChoreoFS LED artifact lacks path_open: $artifact_dir/$choreofs_led.wasm" >&2
+    exit 1
+  fi
+done
+if ! rg -a -q 'fd_write' "$artifact_dir/wasip1-led-choreofs-open.wasm"; then
+  echo "WASI P1 Baker ChoreoFS LED artifact lacks fd_write: $artifact_dir/wasip1-led-choreofs-open.wasm" >&2
+  exit 1
+fi
+if ! rg -a -q 'poll_oneoff' "$artifact_dir/wasip1-led-choreofs-open.wasm"; then
+  echo "WASI P1 Baker ChoreoFS LED artifact lacks poll_oneoff: $artifact_dir/wasip1-led-choreofs-open.wasm" >&2
   exit 1
 fi
 if rg -a -q 'hibana ordinary std wasip1 chaser' "$artifact_dir/wasip1-led-ordinary-std-chaser.wasm"; then
@@ -315,6 +343,14 @@ HIBANA_WASIP1_GUEST_DIR="$artifact_dir" \
     rust_built_wasip1_memory_grow_artifacts_exercise_fence_and_stale_lease_rejection \
     -- \
     --ignored \
+    --exact
+
+HIBANA_WASIP1_GUEST_DIR="$artifact_dir" \
+  cargo test \
+    --test host_baker_led_fd \
+    --features baker-ordinary-std-demo \
+    baker_link_ordinary_std_wasip1_app_fits_embedded_std_start_profile_when_sized \
+    -- \
     --exact
 
 HIBANA_WASIP1_GUEST_DIR="$artifact_dir" \

@@ -1,19 +1,23 @@
 use crate::{
     choreography::protocol::{GpioSet, LABEL_GPIO_SET},
     kernel::{
-        choreofs::{ChoreoFsError, ChoreoFsStore},
-        fd_resolver::GpioFdWriteRoute,
-        guest_ledger::GuestLedger,
-        wasi::{PicoFdRights, PicoFdRoute, PicoFdView, PicoFdViewEntry},
+        choreofs::{
+            CHOREOFS_ROUTE_OBJECT, ChoreoFsError, ChoreoFsStore, pico_rights_from_wasip1_base,
+        },
+        fd_object::GpioFdWriteRoute,
+        guest_ledger::{GuestFd, GuestLedger},
+        wasi::{ChoreoResourceKind, PicoFdRights, PicoFdRoute, PicoFdView, PicoFdViewEntry},
     },
 };
 
 pub const BAKER_LINK_LED_FD: u8 = 3;
+pub const BAKER_LINK_CHOREOFS_PREOPEN_FD: u8 = 9;
 pub const BAKER_LINK_LED_PIN: u8 = 22;
 pub const BAKER_LINK_LED_FDS: [u8; 3] = [3, 4, 5];
 pub const BAKER_LINK_LED_PINS: [u8; 3] = [22, 21, 20];
 pub const BAKER_LINK_LED_RESOURCE_PATHS: [&[u8]; 3] =
     [b"device/led/green", b"device/led/orange", b"device/led/red"];
+pub const BAKER_LINK_WRONG_OBJECT_PATH: &[u8] = b"device/not-gpio";
 pub const BAKER_LINK_LED_ACTIVE_HIGH: bool = true;
 pub const BAKER_LINK_TRAFFIC_LIGHT_PATTERN_STEPS: usize = 7;
 pub const BAKER_LINK_TRAFFIC_GREEN_DELAY_TICKS: u32 = 250;
@@ -26,7 +30,7 @@ pub const BAKER_LINK_LED_TARGET_ROLE: u16 = 0;
 pub const BAKER_LINK_LED_SESSION_GENERATION: u16 = 0;
 pub const BAKER_LINK_LED_POLICY_SLOT: u8 = 0;
 
-pub type BakerLinkLedResourceStore = ChoreoFsStore<3, 24, 0>;
+pub type BakerLinkLedResourceStore = ChoreoFsStore<4, 24, 0>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BakerLinkTrafficStep {
@@ -125,7 +129,80 @@ pub fn baker_link_led_resource_store() -> Result<BakerLinkLedResourceStore, Chor
     for path in BAKER_LINK_LED_RESOURCE_PATHS {
         store.install_gpio_device(path)?;
     }
+    store.install_config_cell(BAKER_LINK_WRONG_OBJECT_PATH, &[])?;
     Ok(store)
+}
+
+pub fn baker_link_choreofs_ledger<const FDS: usize, const LEASES: usize, const PENDING: usize>(
+    store: &BakerLinkLedResourceStore,
+    memory_len: u32,
+    memory_epoch: u32,
+) -> Result<GuestLedger<FDS, LEASES, PENDING>, ChoreoFsError> {
+    let mut ledger = GuestLedger::pico_min(memory_len, memory_epoch);
+    store.grant_preopen_root(&mut ledger, BAKER_LINK_CHOREOFS_PREOPEN_FD)?;
+    Ok(ledger)
+}
+
+pub fn open_baker_link_choreofs_path<
+    const FDS: usize,
+    const LEASES: usize,
+    const PENDING: usize,
+>(
+    store: &BakerLinkLedResourceStore,
+    ledger: &mut GuestLedger<FDS, LEASES, PENDING>,
+    path: &[u8],
+    rights_base: u64,
+) -> Result<GuestFd, ChoreoFsError> {
+    let selector = baker_link_choreofs_selector(path);
+    let new_fd = baker_link_choreofs_fd_for_selector(selector)?;
+    ledger.resolve_fd(
+        BAKER_LINK_CHOREOFS_PREOPEN_FD,
+        PicoFdRights::Read,
+        ChoreoResourceKind::PreopenRoot,
+    )?;
+    let rights = pico_rights_from_wasip1_base(rights_base);
+    let opened = store.open(selector, rights)?;
+    let (lane, route_label, target_role, policy_slot) = match opened.resource() {
+        ChoreoResourceKind::Gpio => (
+            BAKER_LINK_LED_LANE,
+            BAKER_LINK_LED_ROUTE_LABEL,
+            BAKER_LINK_LED_TARGET_ROLE,
+            BAKER_LINK_LED_POLICY_SLOT,
+        ),
+        _ => (8, CHOREOFS_ROUTE_OBJECT, opened.object_id(), 0),
+    };
+    Ok(ledger.apply_fd_cap_mint(
+        new_fd,
+        rights,
+        opened.resource(),
+        lane,
+        route_label,
+        opened.object_id(),
+        BAKER_LINK_LED_TARGET_NODE,
+        target_role,
+        BAKER_LINK_LED_SESSION_GENERATION,
+        opened.generation(),
+        policy_slot,
+    )?)
+}
+
+fn baker_link_choreofs_selector(path: &[u8]) -> &[u8] {
+    match path.split_first() {
+        Some((b'/', rest)) => rest,
+        _ => path,
+    }
+}
+
+fn baker_link_choreofs_fd_for_selector(path: &[u8]) -> Result<u8, ChoreoFsError> {
+    for (index, candidate) in BAKER_LINK_LED_RESOURCE_PATHS.iter().enumerate() {
+        if *candidate == path {
+            return Ok(BAKER_LINK_LED_FDS[index]);
+        }
+    }
+    if path == BAKER_LINK_WRONG_OBJECT_PATH {
+        return Ok(BAKER_LINK_LED_FD);
+    }
+    Err(ChoreoFsError::NotFound)
 }
 
 pub fn grant_baker_link_led_fd<const N: usize>(
@@ -236,7 +313,7 @@ mod tests {
         choreography::protocol::FdWrite,
         kernel::{
             choreofs::ChoreoFsObjectKind,
-            fd_resolver::{GpioFdWriteError, resolve_gpio_fd_write},
+            fd_object::{GpioFdWriteError, check_gpio_object_fd_write},
             wasi::{ChoreoResourceKind, PicoFdRights, PicoFdView, PicoFdViewSource},
         },
     };
@@ -247,7 +324,7 @@ mod tests {
         grant_baker_link_led_fd(&mut fds).expect("grant led fd");
         let write = FdWrite::new(BAKER_LINK_LED_FD, b"1").expect("fd_write payload");
 
-        let set = resolve_gpio_fd_write(&fds, &write, baker_link_led_fd_write_route())
+        let set = check_gpio_object_fd_write(&fds, &write, baker_link_led_fd_write_route())
             .expect("resolve led write");
         assert_eq!(set.pin(), BAKER_LINK_LED_PIN);
         assert_eq!(set.high(), BAKER_LINK_LED_ACTIVE_HIGH);
@@ -259,7 +336,7 @@ mod tests {
         grant_baker_link_led_fd(&mut fds).expect("grant led fd");
         let write = FdWrite::new(BAKER_LINK_LED_FD, b"0").expect("fd_write payload");
 
-        let set = resolve_gpio_fd_write(&fds, &write, baker_link_led_fd_write_route())
+        let set = check_gpio_object_fd_write(&fds, &write, baker_link_led_fd_write_route())
             .expect("resolve led write");
         assert_eq!(set.pin(), BAKER_LINK_LED_PIN);
         assert_eq!(set.high(), !BAKER_LINK_LED_ACTIVE_HIGH);
@@ -277,7 +354,7 @@ mod tests {
             assert_eq!(view.source(), PicoFdViewSource::Mint);
 
             let write = FdWrite::new(fd, b"1").expect("fd_write payload");
-            let set = resolve_gpio_fd_write(&fds, &write, baker_link_led_fd_write_route())
+            let set = check_gpio_object_fd_write(&fds, &write, baker_link_led_fd_write_route())
                 .expect("resolve led write");
             assert_eq!(set.pin(), pin);
             assert_eq!(set.high(), BAKER_LINK_LED_ACTIVE_HIGH);
@@ -318,7 +395,7 @@ mod tests {
         grant_baker_link_led_sequence_fds(&mut fds).expect("grant led sequence fds");
 
         for fd in [3, 4, 5] {
-            let set = resolve_gpio_fd_write(
+            let set = check_gpio_object_fd_write(
                 &fds,
                 &FdWrite::new(fd, b"1").expect("fd_write payload"),
                 baker_link_led_fd_write_route(),
@@ -344,7 +421,7 @@ mod tests {
         let write = FdWrite::new(BAKER_LINK_LED_FD, b"on").expect("fd_write payload");
 
         assert_eq!(
-            resolve_gpio_fd_write(&fds, &write, baker_link_led_fd_write_route()),
+            check_gpio_object_fd_write(&fds, &write, baker_link_led_fd_write_route()),
             Err(GpioFdWriteError::BadPayload)
         );
     }
@@ -357,7 +434,7 @@ mod tests {
         let write = FdWrite::new(1, b"1").expect("fd_write payload");
 
         assert_eq!(
-            resolve_gpio_fd_write(&fds, &write, baker_link_led_fd_write_route()),
+            check_gpio_object_fd_write(&fds, &write, baker_link_led_fd_write_route()),
             Err(GpioFdWriteError::BadFd)
         );
     }

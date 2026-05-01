@@ -6,7 +6,9 @@ cd "$ROOT"
 
 cargo test --test host_measurement_gates
 cargo test --test host_feature_profiles
-cargo test --test host_feature_profiles --features profile-rp2040-baker-min
+cargo test --test host_feature_profiles --features profile-rp2040-pico-min
+cargo test --test host_feature_profiles --features profile-rp2040-picow-swarm-min
+cargo test --test host_feature_profiles --features profile-rp2350-pico2w-swarm-min
 cargo test --test host_feature_profiles --features profile-host-linux-wasip1-full
 HIBANA_PICO_ENFORCE_PRACTICAL=1 bash ./scripts/check_pico_demo_budget.sh
 cargo test --lib kernel::budget::tests
@@ -61,7 +63,7 @@ cargo build \
   --target thumbv6m-none-eabi \
   --release \
   --bin hibana-pico-baker-led-demo \
-  --features "profile-rp2040-baker-min embed-wasip1-artifacts"
+  --features "profile-rp2040-pico-min embed-wasip1-artifacts"
 cargo build \
   --target thumbv8m.main-none-eabi \
   --release \
@@ -74,7 +76,7 @@ cargo build \
   --bin hibana-pico2w-swarm-sensor-4 \
   --bin hibana-pico2w-swarm-sensor-5 \
   --bin hibana-pico2w-swarm-sensor-6 \
-  --features "profile-pico2w-swarm-min embed-wasip1-artifacts"
+  --features "profile-rp2350-pico2w-swarm-min embed-wasip1-artifacts"
 
 if [[ "${HIBANA_PICO_SKIP_QEMU_SWARM:-0}" != 1 ]]; then
   qemu_swarm_bin="${HIBANA_PICO_QEMU_BIN:-${QEMU_BIN:-}}"

@@ -331,6 +331,7 @@ pub enum ChoreoResourceKind {
     Stdout,
     Stderr,
     Gpio,
+    Uart,
     Timer,
     LocalSensor,
     LocalActuator,
@@ -344,6 +345,7 @@ pub enum ChoreoResourceKind {
     ChoreoObject,
     DirectoryView,
     NetworkListener,
+    RemoteObject,
     EphemeralPipe,
 }
 
@@ -2869,7 +2871,7 @@ mod tests {
     #[test]
     fn module_install_with_handler_set_accepts_profile_supported_imports() {
         let supported = b"\0asm\x01\0\0\0wasi_snapshot_preview1 fd_write poll_oneoff proc_exit";
-        let module = Wasip1Module::install_with_handlers(supported, Wasip1HandlerSet::BAKER_MIN)
+        let module = Wasip1Module::install_with_handlers(supported, Wasip1HandlerSet::PICO_MIN)
             .expect("Baker minimum profile supports fd_write + poll_oneoff + proc_exit");
 
         assert_eq!(module.bytes(), supported);

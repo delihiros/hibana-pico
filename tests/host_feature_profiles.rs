@@ -12,8 +12,9 @@ fn cargo_features_define_small_pico_and_full_host_profiles() {
     let cargo = cargo_toml();
 
     for feature in [
-        "profile-rp2040-baker-min",
-        "profile-pico2w-swarm-min",
+        "profile-rp2040-pico-min",
+        "profile-rp2040-picow-swarm-min",
+        "profile-rp2350-pico2w-swarm-min",
         "profile-host-qemu-swarm",
         "profile-host-linux-wasip1-full",
         "wasm-engine-core",
@@ -42,7 +43,7 @@ fn feature_control_matrix_keeps_pico_small_and_host_full_as_separate_axes() {
     let pico = FeatureMatrix {
         profiles: Default::default(),
         engine: WasmEngineProfile::Core,
-        wasip1_handlers: Wasip1HandlerSet::BAKER_MIN,
+        wasip1_handlers: Wasip1HandlerSet::PICO_MIN,
         wasip1_control: Wasip1ControlSubstrate::FULL,
     };
     let host = FeatureMatrix {
@@ -108,7 +109,7 @@ fn wasi_p1_import_coverage_table_is_the_source_of_truth_for_profiles() {
         "coverage table must make fail-closed reject imports explicit"
     );
 
-    let pico = Wasip1HandlerSet::BAKER_MIN;
+    let pico = Wasip1HandlerSet::PICO_MIN;
     assert_eq!(
         WASIP1_PREVIEW1_IMPORT_COVERAGE
             .iter()
@@ -197,11 +198,31 @@ fn active_host_linux_full_profile_claims_full_ordinary_std_capacity() {
 }
 
 #[test]
-#[cfg(feature = "profile-rp2040-baker-min")]
-fn active_rp2040_baker_profile_is_small_not_full_std() {
+#[cfg(feature = "profile-rp2040-pico-min")]
+fn active_rp2040_pico_profile_is_small_not_full_std() {
     use hibana_pico::kernel::features::ACTIVE_FEATURE_MATRIX;
 
-    assert!(ACTIVE_FEATURE_MATRIX.profiles.rp2040_baker_min);
+    assert!(ACTIVE_FEATURE_MATRIX.profiles.rp2040_pico_min);
+    assert!(ACTIVE_FEATURE_MATRIX.can_claim_wasip1_profile());
+    assert!(!ACTIVE_FEATURE_MATRIX.can_claim_full_ordinary_std());
+}
+
+#[test]
+#[cfg(feature = "profile-rp2040-picow-swarm-min")]
+fn active_rp2040_picow_profile_is_wireless_capacity_not_full_std() {
+    use hibana_pico::kernel::features::ACTIVE_FEATURE_MATRIX;
+
+    assert!(ACTIVE_FEATURE_MATRIX.profiles.rp2040_picow_swarm_min);
+    assert!(ACTIVE_FEATURE_MATRIX.can_claim_wasip1_profile());
+    assert!(!ACTIVE_FEATURE_MATRIX.can_claim_full_ordinary_std());
+}
+
+#[test]
+#[cfg(feature = "profile-rp2350-pico2w-swarm-min")]
+fn active_rp2350_pico2w_profile_is_wireless_capacity_not_full_std() {
+    use hibana_pico::kernel::features::ACTIVE_FEATURE_MATRIX;
+
+    assert!(ACTIVE_FEATURE_MATRIX.profiles.rp2350_pico2w_swarm_min);
     assert!(ACTIVE_FEATURE_MATRIX.can_claim_wasip1_profile());
     assert!(!ACTIVE_FEATURE_MATRIX.can_claim_full_ordinary_std());
 }

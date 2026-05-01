@@ -53,7 +53,7 @@ impl GpioFdWriteRoute {
     }
 }
 
-pub fn resolve_gpio_fd_write<const N: usize>(
+pub fn check_gpio_object_fd_write<const N: usize>(
     table: &PicoFdView<N>,
     write: &FdWrite,
     route: GpioFdWriteRoute,
@@ -81,7 +81,7 @@ pub fn resolve_gpio_fd_write<const N: usize>(
 
 #[cfg(test)]
 mod tests {
-    use super::{GpioFdWriteError, GpioFdWriteRoute, resolve_gpio_fd_write};
+    use super::{GpioFdWriteError, GpioFdWriteRoute, check_gpio_object_fd_write};
     use crate::{
         choreography::protocol::{FdWrite, LABEL_GPIO_SET},
         kernel::wasi::{ChoreoResourceKind, PicoFdError, PicoFdRights, PicoFdRoute, PicoFdView},
@@ -119,8 +119,9 @@ mod tests {
     #[test]
     fn resolves_digit_payload_to_gpio_set() {
         let table = table();
-        let set = resolve_gpio_fd_write(&table, &FdWrite::new(4, b"1").expect("fd_write"), route())
-            .expect("resolve gpio fd");
+        let set =
+            check_gpio_object_fd_write(&table, &FdWrite::new(4, b"1").expect("fd_write"), route())
+                .expect("check gpio object fd");
 
         assert_eq!(set.pin(), 21);
         assert!(set.high());
@@ -131,7 +132,7 @@ mod tests {
         let table = table();
 
         assert_eq!(
-            resolve_gpio_fd_write(&table, &FdWrite::new(5, b"1").expect("fd_write"), route()),
+            check_gpio_object_fd_write(&table, &FdWrite::new(5, b"1").expect("fd_write"), route()),
             Err(GpioFdWriteError::BadFd)
         );
     }
@@ -144,7 +145,7 @@ mod tests {
             .expect("grant unrouted gpio fd");
 
         assert_eq!(
-            resolve_gpio_fd_write(&table, &FdWrite::new(3, b"1").expect("fd_write"), route()),
+            check_gpio_object_fd_write(&table, &FdWrite::new(3, b"1").expect("fd_write"), route()),
             Err(GpioFdWriteError::Fd(PicoFdError::BadRoute))
         );
     }
@@ -154,7 +155,7 @@ mod tests {
         let table = table();
 
         assert_eq!(
-            resolve_gpio_fd_write(&table, &FdWrite::new(3, b"on").expect("fd_write"), route()),
+            check_gpio_object_fd_write(&table, &FdWrite::new(3, b"on").expect("fd_write"), route()),
             Err(GpioFdWriteError::BadPayload)
         );
     }

@@ -69,6 +69,22 @@ name = "wasip1-led-ordinary-std-chaser"
 path = "src/bin/wasip1-led-ordinary-std-chaser.rs"
 
 [[bin]]
+name = "wasip1-led-choreofs-open"
+path = "src/bin/wasip1-led-choreofs-open.rs"
+
+[[bin]]
+name = "wasip1-led-choreofs-bad-path"
+path = "src/bin/wasip1-led-choreofs-bad-path.rs"
+
+[[bin]]
+name = "wasip1-led-choreofs-bad-payload"
+path = "src/bin/wasip1-led-choreofs-bad-payload.rs"
+
+[[bin]]
+name = "wasip1-led-choreofs-wrong-object"
+path = "src/bin/wasip1-led-choreofs-wrong-object.rs"
+
+[[bin]]
 name = "wasip1-std-core-coverage"
 path = "src/bin/wasip1-std-core-coverage.rs"
 

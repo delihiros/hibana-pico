@@ -7,7 +7,7 @@ cd "$ROOT"
 pattern="${1:-traffic}"
 target="thumbv6m-none-eabi"
 bin_name="hibana-pico-baker-led-demo"
-features="profile-rp2040-baker-min embed-wasip1-artifacts"
+features="profile-rp2040-pico-min embed-wasip1-artifacts"
 expected_result="48494f4b"
 expected_stage=""
 
@@ -16,6 +16,12 @@ case "$pattern" in
     ;;
   chaser)
     features="$features baker-chaser-demo"
+    ;;
+  ordinary-std|std)
+    features="$features baker-ordinary-std-demo"
+    ;;
+  choreofs)
+    features="$features baker-choreofs-demo"
     ;;
   bad-order)
     features="$features baker-bad-order-demo"
@@ -32,8 +38,23 @@ case "$pattern" in
     expected_result="4849524a"
     expected_stage="48490045"
     ;;
+  choreofs-bad-path)
+    features="$features baker-choreofs-bad-path-demo"
+    expected_result="4849524a"
+    expected_stage="4849004b"
+    ;;
+  choreofs-bad-payload)
+    features="$features baker-choreofs-bad-payload-demo"
+    expected_result="4849524a"
+    expected_stage="4849004c"
+    ;;
+  choreofs-wrong-object)
+    features="$features baker-choreofs-wrong-object-demo"
+    expected_result="4849524a"
+    expected_stage="4849004d"
+    ;;
   *)
-    echo "usage: $0 {traffic|chaser|bad-order|invalid-fd|bad-payload}" >&2
+    echo "usage: $0 {traffic|chaser|ordinary-std|choreofs|bad-order|invalid-fd|bad-payload|choreofs-bad-path|choreofs-bad-payload|choreofs-wrong-object}" >&2
     exit 2
     ;;
 esac

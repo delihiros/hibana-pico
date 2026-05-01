@@ -84,7 +84,10 @@ macro_rules! actuator_program {
 
 macro_rules! gateway_telemetry_program {
     ($source:literal, $gateway:literal) => {
-        g::send::<Role<$source>, Role<$gateway>, SwarmTelemetryMsg, 20>()
+        seq_chain!(
+            g::send::<Role<$source>, Role<$gateway>, SwarmTelemetryMsg, 20>(),
+            g::send::<Role<$gateway>, Role<0>, SwarmTelemetryMsg, 20>(),
+        )
     };
 }
 
