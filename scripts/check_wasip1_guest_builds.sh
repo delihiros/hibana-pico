@@ -236,6 +236,10 @@ if ! rg -a -q 'readonly static write must fail closed' "$artifact_dir/wasip1-std
   echo "WASI P1 std static-write artifact lacks fail-closed marker: $artifact_dir/wasip1-std-choreofs-static-write.wasm" >&2
   exit 1
 fi
+if ! rg -a -q 'path_open' "$artifact_dir/wasip1-std-sock-send-recv.wasm"; then
+  echo "WASI P1 std sock artifact lacks path_open: $artifact_dir/wasip1-std-sock-send-recv.wasm" >&2
+  exit 1
+fi
 if ! rg -a -q 'sock_send' "$artifact_dir/wasip1-std-sock-send-recv.wasm"; then
   echo "WASI P1 std sock artifact lacks sock_send: $artifact_dir/wasip1-std-sock-send-recv.wasm" >&2
   exit 1
@@ -248,7 +252,7 @@ if ! rg -a -q 'sock_shutdown' "$artifact_dir/wasip1-std-sock-send-recv.wasm"; th
   echo "WASI P1 std sock artifact lacks sock_shutdown: $artifact_dir/wasip1-std-sock-send-recv.wasm" >&2
   exit 1
 fi
-if ! rg -a -q 'hibana sock fd ping pong' "$artifact_dir/wasip1-std-sock-send-recv.wasm"; then
+if ! rg -a -q 'hibana network datagram ping pong' "$artifact_dir/wasip1-std-sock-send-recv.wasm"; then
   echo "WASI P1 std sock artifact lacks stdout marker: $artifact_dir/wasip1-std-sock-send-recv.wasm" >&2
   exit 1
 fi

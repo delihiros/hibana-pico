@@ -381,14 +381,15 @@ fn rust_built_wasip1_smoke_artifacts_cover_timer_trap_and_infinite_loop() {
 
         let std_sock = artifact("wasip1-std-sock-send-recv");
         assert!(
-            bytes_contain(&std_sock, b"sock_send")
+            bytes_contain(&std_sock, b"path_open")
+                && bytes_contain(&std_sock, b"sock_send")
                 && bytes_contain(&std_sock, b"sock_recv")
                 && bytes_contain(&std_sock, b"sock_shutdown"),
-            "ordinary std socket app must exercise WASI P1 sock imports"
+            "ordinary std datagram app must open a ChoreoFS NetworkObject and exercise WASI P1 sock imports"
         );
         assert!(
-            bytes_contain(&std_sock, b"hibana sock fd ping pong"),
-            "ordinary std socket app must carry the stdout marker"
+            bytes_contain(&std_sock, b"hibana network datagram ping pong"),
+            "ordinary std datagram app must carry the stdout marker"
         );
 
         let std_sock_accept = artifact("wasip1-std-sock-accept-send-recv");
@@ -747,30 +748,35 @@ fn rust_built_std_sock_app_uses_network_object_without_p2() {
     let artifact = artifact("wasip1-std-sock-send-recv");
     let mut runner = CoreWasip1HostRunner::new(&artifact).expect("create host/full sock runner");
     runner
-        .cap_grant_datagram(30)
-        .expect("grant host/full datagram fd");
-    runner.enqueue_network_rx(30, b"pong");
+        .fs_mut()
+        .install_network_datagram(b"network/datagram/ping-pong")
+        .expect("install ping-pong NetworkDatagram");
+    runner.enqueue_network_rx(4, b"pong");
 
     let report = runner
         .run_until_exit(512)
-        .expect("run ordinary std socket app through host/full typed runner");
+        .expect("run ordinary std datagram app through host/full typed runner");
     assert_eq!(report.exit_status, Some(0));
     assert!(
-        bytes_contain(&report.stdout, b"hibana sock fd ping pong"),
-        "socket app must report success through stdout"
+        bytes_contain(&report.stdout, b"hibana network datagram ping pong"),
+        "datagram app must report success through stdout"
     );
+    assert_eq!(report.choreofs_open_count, 1);
     assert_eq!(runner.network_tx().len(), 1);
-    assert_eq!(runner.network_tx()[0].0, 30);
-    assert_eq!(runner.network_tx()[0].1, b"ping");
-    assert!(report.network_send_count >= 1);
-    assert!(report.network_recv_count >= 1);
-    assert!(
-        report
-            .engine_trace
-            .iter()
-            .any(|request| matches!(request, EngineReq::FdWrite(_))),
-        "sock_send must enter the typed fd_write syscall stream"
-    );
+    assert_eq!(runner.network_tx()[0].0, 4);
+    assert_eq!(runner.network_tx()[0].1, vec![b'x'; 30]);
+    assert_eq!(report.network_send_count, 1);
+    assert_eq!(report.network_recv_count, 1);
+    let sent_write = report
+        .engine_trace
+        .iter()
+        .find_map(|request| match request {
+            EngineReq::FdWrite(write) => Some(write),
+            _ => None,
+        })
+        .expect("sock_send must enter the typed fd_write syscall stream");
+    assert_eq!(sent_write.fd(), 4);
+    assert_eq!(sent_write.as_bytes(), &[b'x'; 30]);
     assert!(
         report
             .engine_trace

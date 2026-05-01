@@ -272,8 +272,10 @@ fn choreofs_led_smoke_app_uses_safe_guest_wrapper_for_normal_device_access() {
 
     let lib_source = include_str!("../apps/wasip1/hibana-wasi-guest/src/lib.rs");
     assert!(
-        lib_source.contains("pub mod baker") && lib_source.contains("pub mod choreofs"),
-        "hibana-wasi-guest must expose Baker-specific helpers and generic ChoreoFS helpers"
+        lib_source.contains("pub mod baker")
+            && lib_source.contains("pub mod choreofs")
+            && lib_source.contains("pub mod net"),
+        "hibana-wasi-guest must expose Baker-specific helpers, generic ChoreoFS helpers, and NetworkObject helpers"
     );
     assert!(
         lib_source.contains("mod sys") && !lib_source.contains("pub mod sys"),
@@ -292,6 +294,7 @@ fn choreofs_led_smoke_app_uses_safe_guest_wrapper_for_normal_device_access() {
         "apps/wasip1/hibana-wasi-guest/src/choreofs.rs",
         "apps/wasip1/hibana-wasi-guest/src/error.rs",
         "apps/wasip1/hibana-wasi-guest/src/lib.rs",
+        "apps/wasip1/hibana-wasi-guest/src/net.rs",
         "apps/wasip1/hibana-wasi-guest/src/sys.rs",
     ];
 
@@ -307,6 +310,9 @@ fn choreofs_led_smoke_app_uses_safe_guest_wrapper_for_normal_device_access() {
             "fn path_open(",
             "fn fd_write(",
             "fn poll_oneoff(",
+            "fn sock_send(",
+            "fn sock_recv(",
+            "fn sock_shutdown(",
         ] {
             assert!(
                 is_sys || !source.contains(needle),
@@ -338,6 +344,52 @@ fn choreofs_led_smoke_app_uses_safe_guest_wrapper_for_normal_device_access() {
             && device_source.contains("device/led/")
             && device_source.contains("choreofs::"),
         "Baker LED helper should hold Baker-specific constants and build on generic ChoreoFS"
+    );
+
+    let net_source =
+        std::fs::read_to_string(manifest_dir.join("apps/wasip1/hibana-wasi-guest/src/net.rs"))
+            .expect("NetworkObject helper module");
+    assert!(
+        net_source.contains("pub struct Datagram")
+            && net_source.contains("pub fn ping_pong")
+            && net_source.contains("pub fn gateway")
+            && net_source.contains("pub fn send")
+            && net_source.contains("pub fn recv")
+            && net_source.contains("pub fn shutdown"),
+        "NetworkObject helper should expose a bounded Datagram facade"
+    );
+    assert!(
+        net_source.contains("network/datagram/ping-pong")
+            && net_source.contains("network/datagram/gateway"),
+        "Datagram facade should keep ChoreoFS selectors private to the helper"
+    );
+    for forbidden in [
+        "pub fn fd",
+        "SocketAddr",
+        "IpAddr",
+        "DnsName",
+        "connect(",
+        "bind(",
+        "send_to",
+        "recv_from",
+        "reconnect",
+    ] {
+        assert!(
+            !net_source.contains(forbidden),
+            "NetworkObject helper must not expose socket/network-stack authority marker {forbidden}"
+        );
+    }
+
+    let std_sock_source =
+        include_str!("../apps/wasip1/wasip1-smoke-apps/src/bin/wasip1-std-sock-send-recv.rs");
+    assert!(
+        std_sock_source.contains("hibana_wasi_guest::net::Datagram")
+            && std_sock_source.contains("Datagram::ping_pong()"),
+        "network smoke app should use the safe Datagram capability facade"
+    );
+    assert!(
+        !std_sock_source.contains("unsafe extern \"C\"") && !std_sock_source.contains("unsafe {"),
+        "network smoke app must not declare or call WASI imports directly"
     );
 }
 
