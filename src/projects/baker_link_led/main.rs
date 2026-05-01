@@ -35,18 +35,6 @@ use hibana::{
         tap::TapEvent,
     },
 };
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-#[cfg(all(
-    target_arch = "arm",
-    target_os = "none",
-    not(any(
-        feature = "baker-choreofs-demo",
-        feature = "baker-choreofs-bad-path-demo",
-        feature = "baker-choreofs-bad-payload-demo",
-        feature = "baker-choreofs-wrong-object-demo"
-    ))
-))]
-use hibana_pico::choreography::local::baker_led_blink_roles;
 #[cfg(all(
     target_arch = "arm",
     target_os = "none",
@@ -57,7 +45,18 @@ use hibana_pico::choreography::local::baker_led_blink_roles;
         feature = "baker-choreofs-wrong-object-demo"
     )
 ))]
-use hibana_pico::choreography::local::baker_led_choreofs_blink_roles;
+use hibana_pico::choreography::baker_link_led::choreofs_traffic_light_roles;
+#[cfg(all(
+    target_arch = "arm",
+    target_os = "none",
+    not(any(
+        feature = "baker-choreofs-demo",
+        feature = "baker-choreofs-bad-path-demo",
+        feature = "baker-choreofs-bad-payload-demo",
+        feature = "baker-choreofs-wrong-object-demo"
+    ))
+))]
+use hibana_pico::choreography::baker_link_led::traffic_light_roles;
 #[cfg(all(
     target_arch = "arm",
     target_os = "none",
@@ -66,14 +65,16 @@ use hibana_pico::choreography::local::baker_led_choreofs_blink_roles;
 use hibana_pico::choreography::protocol::PollOneoff;
 #[cfg(all(target_arch = "arm", target_os = "none"))]
 use hibana_pico::{
+    choreography::baker_link_led::{
+        BakerTrafficLoopBreakControl, BakerTrafficLoopContinueControl, POLICY_BAKER_TRAFFIC_LOOP,
+    },
     choreography::protocol::{
-        BakerTrafficLoopBreakControl, BakerTrafficLoopContinueControl, BudgetRun, BudgetRunMsg,
-        EngineLabelUniverse, EngineReq, EngineRet, FdWrite, FdWriteDone, GpioSet, LABEL_GPIO_SET,
-        LABEL_GPIO_SET_DONE, LABEL_MEM_BORROW_READ, LABEL_MEM_RELEASE, LABEL_TIMER_SLEEP_DONE,
-        LABEL_TIMER_SLEEP_UNTIL, LABEL_WASI_FD_WRITE, LABEL_WASI_FD_WRITE_RET,
-        LABEL_WASI_PATH_OPEN, LABEL_WASI_PATH_OPEN_RET, LABEL_WASI_POLL_ONEOFF,
-        LABEL_WASI_POLL_ONEOFF_RET, LABEL_WASI_PROC_EXIT, MemBorrow, MemReadGrantControl,
-        MemRelease, MemRights, POLICY_BAKER_TRAFFIC_LOOP, PathOpen, PollReady, ProcExitStatus,
+        BudgetRun, BudgetRunMsg, EngineLabelUniverse, EngineReq, EngineRet, FdWrite, FdWriteDone,
+        GpioSet, LABEL_GPIO_SET, LABEL_GPIO_SET_DONE, LABEL_MEM_BORROW_READ, LABEL_MEM_RELEASE,
+        LABEL_TIMER_SLEEP_DONE, LABEL_TIMER_SLEEP_UNTIL, LABEL_WASI_FD_WRITE,
+        LABEL_WASI_FD_WRITE_RET, LABEL_WASI_PATH_OPEN, LABEL_WASI_PATH_OPEN_RET,
+        LABEL_WASI_POLL_ONEOFF, LABEL_WASI_POLL_ONEOFF_RET, LABEL_WASI_PROC_EXIT, MemBorrow,
+        MemReadGrantControl, MemRelease, MemRights, PathOpen, PollReady, ProcExitStatus,
         TimerSleepDone, TimerSleepUntil, WASIP1_STREAM_CHUNK_CAPACITY,
     },
     kernel::{
@@ -599,14 +600,14 @@ fn init_runtime_once() {
             feature = "baker-choreofs-wrong-object-demo"
         ))]
         let (core0_program, core1_program, core2_program, core3_program) =
-            baker_led_choreofs_blink_roles();
+            choreofs_traffic_light_roles();
         #[cfg(not(any(
             feature = "baker-choreofs-demo",
             feature = "baker-choreofs-bad-path-demo",
             feature = "baker-choreofs-bad-payload-demo",
             feature = "baker-choreofs-wrong-object-demo"
         )))]
-        let (core0_program, core1_program, core2_program, core3_program) = baker_led_blink_roles();
+        let (core0_program, core1_program, core2_program, core3_program) = traffic_light_roles();
         mark_stage(STAGE_PROGRAM_READY);
         if kit
             .set_resolver::<POLICY_BAKER_TRAFFIC_LOOP, 1>(

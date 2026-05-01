@@ -18,17 +18,18 @@ use hibana::{
     },
 };
 use hibana_pico::{
-    choreography::local::{
-        baker_led_blink_roles, baker_led_fd_write_two_cycles_roles, wasip1_stdout_uart_roles,
+    choreography::baker_link_led::{
+        BakerTrafficLoopBreakControl, BakerTrafficLoopContinueControl, POLICY_BAKER_TRAFFIC_LOOP,
+        fd_write_two_cycles_roles, traffic_light_roles,
     },
+    choreography::local::wasip1_stdout_uart_roles,
     choreography::protocol::{
-        BakerTrafficLoopBreakControl, BakerTrafficLoopContinueControl, BudgetRun, BudgetRunMsg,
-        EngineLabelUniverse, EngineReq, EngineRet, FdWrite, FdWriteDone, GpioSet, LABEL_GPIO_SET,
-        LABEL_GPIO_SET_DONE, LABEL_MEM_BORROW_READ, LABEL_MEM_RELEASE, LABEL_TIMER_SLEEP_DONE,
-        LABEL_TIMER_SLEEP_UNTIL, LABEL_UART_WRITE, LABEL_UART_WRITE_RET, LABEL_WASI_FD_WRITE,
-        LABEL_WASI_FD_WRITE_RET, LABEL_WASI_POLL_ONEOFF, LABEL_WASI_POLL_ONEOFF_RET,
-        LABEL_WASI_PROC_EXIT, LABEL_WASIP1_STDOUT, LABEL_WASIP1_STDOUT_RET, MemBorrow,
-        MemReadGrantControl, MemRelease, MemRights, POLICY_BAKER_TRAFFIC_LOOP, PollOneoff,
+        BudgetRun, BudgetRunMsg, EngineLabelUniverse, EngineReq, EngineRet, FdWrite, FdWriteDone,
+        GpioSet, LABEL_GPIO_SET, LABEL_GPIO_SET_DONE, LABEL_MEM_BORROW_READ, LABEL_MEM_RELEASE,
+        LABEL_TIMER_SLEEP_DONE, LABEL_TIMER_SLEEP_UNTIL, LABEL_UART_WRITE, LABEL_UART_WRITE_RET,
+        LABEL_WASI_FD_WRITE, LABEL_WASI_FD_WRITE_RET, LABEL_WASI_POLL_ONEOFF,
+        LABEL_WASI_POLL_ONEOFF_RET, LABEL_WASI_PROC_EXIT, LABEL_WASIP1_STDOUT,
+        LABEL_WASIP1_STDOUT_RET, MemBorrow, MemReadGrantControl, MemRelease, MemRights, PollOneoff,
         PollReady, ProcExitStatus, StdoutChunk, TimerSleepDone, TimerSleepUntil, UartWrite,
         UartWriteDone,
     },
@@ -632,7 +633,7 @@ async fn run_baker_wasip1_pattern(
         )
         .expect("register baker rendezvous");
 
-    let (kernel_program, engine_program, gpio_program, timer_program) = baker_led_blink_roles();
+    let (kernel_program, engine_program, gpio_program, timer_program) = traffic_light_roles();
     register_baker_traffic_loop_resolver(&cluster, rv, &engine_program, &traffic_policy);
     let mut kernel = cluster
         .enter(rv, SessionId::new(sid), &kernel_program, NoBinding)
@@ -748,7 +749,7 @@ async fn run_baker_wasip1_fd_object_reject(
         )
         .expect("register firmware-sized rendezvous");
 
-    let (kernel_program, engine_program, _gpio_program, _timer_program) = baker_led_blink_roles();
+    let (kernel_program, engine_program, _gpio_program, _timer_program) = traffic_light_roles();
     register_baker_traffic_loop_resolver(&cluster, rv, &engine_program, &traffic_policy);
     let mut kernel: Endpoint<'_, 0> = cluster
         .enter(rv, SessionId::new(sid), &kernel_program, NoBinding)
@@ -1066,7 +1067,7 @@ fn baker_link_led_fd_write_digits_drive_first_visible_led_through_choreography()
             )
             .expect("register gpio rendezvous");
 
-        let (kernel_program, engine_program, gpio_program) = baker_led_fd_write_two_cycles_roles();
+        let (kernel_program, engine_program, gpio_program) = fd_write_two_cycles_roles();
         let sid = SessionId::new(133);
         let mut kernel = cluster0
             .enter(rv0, sid, &kernel_program, NoBinding)
@@ -1401,7 +1402,7 @@ fn baker_link_static_projection_attaches_with_firmware_sized_slab() {
         )
         .expect("register firmware-sized rendezvous");
 
-    let (kernel_program, engine_program, gpio_program, timer_program) = baker_led_blink_roles();
+    let (kernel_program, engine_program, gpio_program, timer_program) = traffic_light_roles();
     register_baker_traffic_loop_resolver(&cluster, rv, &engine_program, &traffic_policy);
     let sid = SessionId::new(144);
     let _kernel: Endpoint<'_, 0> = cluster
@@ -1434,8 +1435,7 @@ fn baker_link_single_runtime_drives_first_fd_write_like_firmware() {
             )
             .expect("register firmware-sized rendezvous");
 
-        let (kernel_program, engine_program, gpio_program, _timer_program) =
-            baker_led_blink_roles();
+        let (kernel_program, engine_program, gpio_program, _timer_program) = traffic_light_roles();
         register_baker_traffic_loop_resolver(&cluster, rv, &engine_program, &traffic_policy);
         let sid = SessionId::new(145);
         let mut kernel: Endpoint<'_, 0> = cluster
@@ -1486,8 +1486,7 @@ fn baker_link_kernel_recv_can_wait_before_engine_sends() {
             )
             .expect("register firmware-sized rendezvous");
 
-        let (kernel_program, engine_program, _gpio_program, _timer_program) =
-            baker_led_blink_roles();
+        let (kernel_program, engine_program, _gpio_program, _timer_program) = traffic_light_roles();
         register_baker_traffic_loop_resolver(&cluster, rv, &engine_program, &traffic_policy);
         let sid = SessionId::new(146);
         let mut kernel: Endpoint<'_, 0> = cluster
@@ -1522,8 +1521,7 @@ fn baker_link_bad_order_wasip1_poll_oneoff_is_rejected_before_fd_write_phase() {
             )
             .expect("register firmware-sized rendezvous");
 
-        let (kernel_program, engine_program, _gpio_program, _timer_program) =
-            baker_led_blink_roles();
+        let (kernel_program, engine_program, _gpio_program, _timer_program) = traffic_light_roles();
         register_baker_traffic_loop_resolver(&cluster, rv, &engine_program, &traffic_policy);
         let sid = SessionId::new(147);
         let mut kernel: Endpoint<'_, 0> = cluster

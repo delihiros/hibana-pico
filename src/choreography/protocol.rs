@@ -4,8 +4,8 @@ use hibana::{
         cap::{
             CapShot, ControlResourceKind, GenericCapToken, ResourceKind,
             advanced::{
-                CAP_HANDLE_LEN, CapError, ControlOp, ControlPath, ControlScopeKind, LoopBreakKind,
-                LoopContinueKind, RouteDecisionKind, ScopeId,
+                CAP_HANDLE_LEN, CapError, ControlOp, ControlPath, ControlScopeKind,
+                RouteDecisionKind, ScopeId,
             },
         },
         ids::{Lane, SessionId},
@@ -125,10 +125,6 @@ pub const LABEL_ROUTE_NETWORK_STREAM_READ: u8 = 115;
 pub const LABEL_ROUTE_NETWORK_ACCEPT: u8 = 122;
 pub const LABEL_ROUTE_REMOTE_MANAGEMENT: u8 = 116;
 pub const LABEL_ROUTE_REMOTE_TELEMETRY: u8 = 117;
-pub const LABEL_BAKER_TRAFFIC_LOOP_CONTINUE: u8 = 120;
-pub const LABEL_BAKER_TRAFFIC_LOOP_BREAK: u8 = 121;
-pub const POLICY_BAKER_TRAFFIC_LOOP: u16 = 120;
-
 const TAG_REQ_LOG_U32: u8 = 1;
 const TAG_REQ_YIELD: u8 = 2;
 const TAG_REQ_WASIP1_STDOUT: u8 = 3;
@@ -300,10 +296,6 @@ pub type NetworkAcceptRouteControl = Msg<
     GenericCapToken<NetworkAcceptRouteKind>,
     NetworkAcceptRouteKind,
 >;
-pub type BakerTrafficLoopContinueControl =
-    Msg<LABEL_BAKER_TRAFFIC_LOOP_CONTINUE, GenericCapToken<LoopContinueKind>, LoopContinueKind>;
-pub type BakerTrafficLoopBreakControl =
-    Msg<LABEL_BAKER_TRAFFIC_LOOP_BREAK, GenericCapToken<LoopBreakKind>, LoopBreakKind>;
 pub type BudgetRunMsg = Msg<LABEL_ENGINE_RUN, BudgetRun>;
 pub type BudgetExpiredMsg = Msg<LABEL_ENGINE_BUDGET_EXPIRED, BudgetExpired>;
 pub type BudgetSuspendMsg = Msg<LABEL_ENGINE_SUSPEND, BudgetSuspend>;
