@@ -5,3 +5,10 @@ version = 4
 [[package]]
 name = "hibana-pico-wasip1-smoke-apps"
 version = "0.1.0"
+dependencies = [
+ "hibana-wasi-guest",
+]
+
+[[package]]
+name = "hibana-wasi-guest"
+version = "0.1.0"
