@@ -226,6 +226,135 @@ fn ordinary_std_corpus_is_full_profile_engine_coverage_not_choreography_policy()
 }
 
 #[test]
+fn choreofs_led_smoke_app_uses_safe_guest_wrapper_for_normal_device_access() {
+    let smoke_manifest = include_str!("../apps/wasip1/wasip1-smoke-apps/Cargo.toml");
+    assert!(
+        smoke_manifest.contains("hibana-wasi-guest"),
+        "WASI smoke apps must depend on the safe guest wrapper crate"
+    );
+
+    let source =
+        include_str!("../apps/wasip1/wasip1-smoke-apps/src/bin/wasip1-led-choreofs-open.rs");
+    for needle in ["hibana_wasi_guest", "baker", "Led", "sleep_ms"] {
+        assert!(
+            source.contains(needle),
+            "normal ChoreoFS LED app should use the Baker-scoped safe guest wrapper API ({needle})"
+        );
+    }
+    for needle in [
+        "Led::open(\"/device/led/green\")",
+        "Led::open(\"/device/led/orange\")",
+        "Led::open(\"/device/led/red\")",
+        ".set(true)",
+        ".set(false)",
+    ] {
+        assert!(
+            source.contains(needle),
+            "normal ChoreoFS LED app should use the preferred Baker LED command {needle}"
+        );
+    }
+    for forbidden in [
+        "Led::green(",
+        "Led::orange(",
+        "Led::red(",
+        ".on()",
+        ".off()",
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "normal ChoreoFS LED app should not use alternate LED helper {forbidden}"
+        );
+    }
+    assert!(
+        !source.contains("unsafe extern \"C\"") && !source.contains("unsafe {"),
+        "normal ChoreoFS LED app must not declare or call WASI imports directly"
+    );
+
+    let lib_source = include_str!("../apps/wasip1/hibana-wasi-guest/src/lib.rs");
+    assert!(
+        lib_source.contains("pub mod baker") && lib_source.contains("pub mod choreofs"),
+        "hibana-wasi-guest must expose Baker-specific helpers and generic ChoreoFS helpers"
+    );
+    assert!(
+        lib_source.contains("mod sys") && !lib_source.contains("pub mod sys"),
+        "raw WASI ABI sys module must stay crate-private"
+    );
+    assert!(
+        !lib_source.contains("pub mod device") && !lib_source.contains("pub mod time"),
+        "Baker-specific device/time helpers should not be public root modules"
+    );
+
+    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let wrapper_paths = [
+        "apps/wasip1/hibana-wasi-guest/src/baker.rs",
+        "apps/wasip1/hibana-wasi-guest/src/baker/device.rs",
+        "apps/wasip1/hibana-wasi-guest/src/baker/time.rs",
+        "apps/wasip1/hibana-wasi-guest/src/choreofs.rs",
+        "apps/wasip1/hibana-wasi-guest/src/error.rs",
+        "apps/wasip1/hibana-wasi-guest/src/lib.rs",
+        "apps/wasip1/hibana-wasi-guest/src/sys.rs",
+    ];
+
+    for path in wrapper_paths {
+        let source = std::fs::read_to_string(manifest_dir.join(path))
+            .unwrap_or_else(|err| panic!("failed to read {path}: {err}"));
+        let is_sys = path.ends_with("/sys.rs");
+        for needle in [
+            "#[repr(C)]",
+            "unsafe extern \"C\"",
+            "unsafe {",
+            "wasi_snapshot_preview1",
+            "fn path_open(",
+            "fn fd_write(",
+            "fn poll_oneoff(",
+        ] {
+            assert!(
+                is_sys || !source.contains(needle),
+                "{path} must not contain raw WASI ABI marker {needle:?}; keep it in sys.rs"
+            );
+        }
+    }
+
+    let choreofs_source =
+        std::fs::read_to_string(manifest_dir.join("apps/wasip1/hibana-wasi-guest/src/choreofs.rs"))
+            .expect("generic ChoreoFS helper module");
+    assert!(
+        choreofs_source.contains("pub fn open_write")
+            && choreofs_source.contains("pub struct WriteFile")
+            && choreofs_source.contains("write_once_exact"),
+        "generic ChoreoFS module should expose path_open/write helpers without raw ABI"
+    );
+
+    let device_source = std::fs::read_to_string(
+        manifest_dir.join("apps/wasip1/hibana-wasi-guest/src/baker/device.rs"),
+    )
+    .expect("Baker LED helper module");
+    assert!(
+        !device_source.contains("pub fn fd("),
+        "Led must not expose the raw fd from the safe wrapper API"
+    );
+    assert!(
+        device_source.contains("DEVICE_PREOPEN_FD: u32 = 9")
+            && device_source.contains("device/led/")
+            && device_source.contains("choreofs::"),
+        "Baker LED helper should hold Baker-specific constants and build on generic ChoreoFS"
+    );
+}
+
+#[test]
+fn pico_plan_gate_runs_wasi_guest_wrapper_and_baker_choreofs_builds() {
+    let script = include_str!("../scripts/check_plan_pico_gates.sh");
+    assert!(
+        script.contains("cargo test --manifest-path apps/wasip1/hibana-wasi-guest/Cargo.toml"),
+        "Pico plan gate must run hibana-wasi-guest wrapper unit tests"
+    );
+    assert!(
+        script.contains("--target thumbv6m-none-eabi") && script.contains("baker-choreofs-demo"),
+        "Pico plan gate must keep the RP2040 Baker ChoreoFS firmware build gate"
+    );
+}
+
+#[test]
 #[cfg(feature = "profile-host-linux-wasip1-full")]
 fn active_host_linux_full_profile_claims_full_ordinary_std_capacity() {
     use hibana_pico::kernel::features::ACTIVE_FEATURE_MATRIX;

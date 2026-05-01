@@ -10,6 +10,7 @@ cargo test --test host_feature_profiles --features profile-rp2040-pico-min
 cargo test --test host_feature_profiles --features profile-rp2040-picow-swarm-min
 cargo test --test host_feature_profiles --features profile-rp2350-pico2w-swarm-min
 cargo test --test host_feature_profiles --features profile-host-linux-wasip1-full
+cargo test --manifest-path apps/wasip1/hibana-wasi-guest/Cargo.toml
 HIBANA_PICO_ENFORCE_PRACTICAL=1 bash ./scripts/check_pico_demo_budget.sh
 cargo test --lib kernel::budget::tests
 cargo test --lib kernel::engine::wasm::tests::fuel_exhaustion_becomes_budget_expired_event
