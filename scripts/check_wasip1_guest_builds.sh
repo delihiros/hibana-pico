@@ -81,6 +81,7 @@ artifacts=(
   wasip1-std-sock-send-recv
   wasip1-std-sock-accept-send-recv
   wasip1-std-sock-accept-bad
+  wasip1-std-stream-control
   wasip1-memory-grow-ok
   wasip1-memory-grow-stale-lease
 )
@@ -284,6 +285,26 @@ if ! rg -a -q 'sock_accept must fail closed' "$artifact_dir/wasip1-std-sock-acce
   echo "WASI P1 std bad sock artifact lacks fail-closed marker: $artifact_dir/wasip1-std-sock-accept-bad.wasm" >&2
   exit 1
 fi
+if ! rg -a -q 'path_open' "$artifact_dir/wasip1-std-stream-control.wasm"; then
+  echo "WASI P1 std stream control artifact lacks path_open: $artifact_dir/wasip1-std-stream-control.wasm" >&2
+  exit 1
+fi
+if ! rg -a -q 'sock_send' "$artifact_dir/wasip1-std-stream-control.wasm"; then
+  echo "WASI P1 std stream control artifact lacks sock_send: $artifact_dir/wasip1-std-stream-control.wasm" >&2
+  exit 1
+fi
+if ! rg -a -q 'sock_recv' "$artifact_dir/wasip1-std-stream-control.wasm"; then
+  echo "WASI P1 std stream control artifact lacks sock_recv: $artifact_dir/wasip1-std-stream-control.wasm" >&2
+  exit 1
+fi
+if ! rg -a -q 'sock_shutdown' "$artifact_dir/wasip1-std-stream-control.wasm"; then
+  echo "WASI P1 std stream control artifact lacks sock_shutdown: $artifact_dir/wasip1-std-stream-control.wasm" >&2
+  exit 1
+fi
+if ! rg -a -q 'hibana network stream control ping pong' "$artifact_dir/wasip1-std-stream-control.wasm"; then
+  echo "WASI P1 std stream control artifact lacks stdout marker: $artifact_dir/wasip1-std-stream-control.wasm" >&2
+  exit 1
+fi
 if rg -q '#!\[no_main\]|__main_void' apps/wasip1/wasip1-smoke-apps/src/bin/wasip1-led-ordinary-std-chaser.rs; then
   echo "WASI P1 LED ordinary std chaser source must be ordinary fn main without an extra __main_void trampoline" >&2
   exit 1
@@ -416,6 +437,15 @@ HIBANA_WASIP1_GUEST_DIR="$artifact_dir" \
     --test host_wasip1_artifacts \
     --features profile-host-linux-wasip1-full \
     rust_built_std_sock_accept_app_mints_network_object_without_socket_authority \
+    -- \
+    --ignored \
+    --exact
+
+HIBANA_WASIP1_GUEST_DIR="$artifact_dir" \
+  cargo test \
+    --test host_wasip1_artifacts \
+    --features profile-host-linux-wasip1-full \
+    rust_built_std_stream_control_app_uses_network_object_without_socket_authority \
     -- \
     --ignored \
     --exact

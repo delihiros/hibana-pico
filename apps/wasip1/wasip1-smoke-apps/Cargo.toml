@@ -120,6 +120,10 @@ name = "wasip1-std-sock-accept-bad"
 path = "src/bin/wasip1-std-sock-accept-bad.rs"
 
 [[bin]]
+name = "wasip1-std-stream-control"
+path = "src/bin/wasip1-std-stream-control.rs"
+
+[[bin]]
 name = "wasip1-memory-grow-ok"
 path = "src/bin/wasip1-memory-grow-ok.rs"
 

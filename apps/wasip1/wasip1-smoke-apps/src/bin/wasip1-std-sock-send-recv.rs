@@ -1,12 +1,10 @@
 use hibana_wasi_guest::net::Datagram;
 use std::io::Write;
 
-const MAX_PAYLOAD_PROOF: [u8; Datagram::MAX_PAYLOAD] = [b'x'; Datagram::MAX_PAYLOAD];
-
 fn main() -> hibana_wasi_guest::Result<()> {
     let net = Datagram::ping_pong()?;
 
-    net.send(&MAX_PAYLOAD_PROOF)?;
+    net.send(b"ping")?;
 
     let mut recv = [0u8; Datagram::MAX_PAYLOAD];
     let n = net.recv(&mut recv)?;
