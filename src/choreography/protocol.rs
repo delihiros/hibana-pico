@@ -177,7 +177,7 @@ const TAG_RET_WASI_ENVIRON_SIZES: u8 = 21;
 const TAG_RET_WASI_PATH_OPENED: u8 = 22;
 
 pub const WASIP1_STREAM_CHUNK_CAPACITY: usize = 30;
-pub const WASIP1_PATH_CHUNK_CAPACITY: usize = 48;
+pub const WASIP1_PATH_CHUNK_CAPACITY: usize = 40;
 pub const STDOUT_CHUNK_CAPACITY: usize = WASIP1_STREAM_CHUNK_CAPACITY;
 pub const STDERR_CHUNK_CAPACITY: usize = WASIP1_STREAM_CHUNK_CAPACITY;
 pub const STDIN_CHUNK_CAPACITY: usize = WASIP1_STREAM_CHUNK_CAPACITY;
@@ -2650,12 +2650,13 @@ impl WirePayload for FdError {
 pub type FdErrorMsg = Msg<LABEL_WASI_FD_ERROR, FdError>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(C)]
 pub struct PathOpen {
-    preopen_fd: u8,
-    lease_id: u8,
     rights_base: u64,
     path: [u8; WASIP1_PATH_CHUNK_CAPACITY],
-    len: usize,
+    preopen_fd: u8,
+    lease_id: u8,
+    len: u8,
 }
 
 impl PathOpen {
@@ -2671,11 +2672,11 @@ impl PathOpen {
         let mut out = [0u8; WASIP1_PATH_CHUNK_CAPACITY];
         out[..path.len()].copy_from_slice(path);
         Ok(Self {
-            preopen_fd,
-            lease_id,
             rights_base,
             path: out,
-            len: path.len(),
+            preopen_fd,
+            lease_id,
+            len: path.len() as u8,
         })
     }
 
@@ -2692,11 +2693,11 @@ impl PathOpen {
     }
 
     pub const fn len(&self) -> usize {
-        self.len
+        self.len as usize
     }
 
     pub fn path(&self) -> &[u8] {
-        self.path.split_at(self.len).0
+        self.path.split_at(self.len()).0
     }
 
     fn decode(bytes: &[u8]) -> Result<Self, CodecError> {

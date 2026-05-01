@@ -103,6 +103,8 @@ read_word() {
 
 result_addr="$(symbol_addr HIBANA_DEMO_RESULT)"
 stage_addr="$(symbol_addr HIBANA_DEMO_FAILURE_STAGE)"
+core0_stack_addr="$(symbol_addr HIBANA_DEMO_CORE0_STACK_MAX_USED_BYTES)"
+core1_stack_addr="$(symbol_addr HIBANA_DEMO_CORE1_STACK_MAX_USED_BYTES)"
 result=""
 stage=""
 deadline=$((SECONDS + ${HIBANA_BAKER_TIMEOUT_SECONDS:-45}))
@@ -125,6 +127,10 @@ printf 'pattern=%s\n' "$pattern"
 printf 'features=%s\n' "$features"
 printf 'result_addr=%s result=0x%s expected=0x%s\n' "$result_addr" "$result" "$expected_result"
 printf 'stage_addr=%s stage=0x%s\n' "$stage_addr" "$stage"
+core0_stack="$(read_word "$core0_stack_addr")"
+core1_stack="$(read_word "$core1_stack_addr")"
+printf 'core0_stack_high_water_addr=%s used=0x%s\n' "$core0_stack_addr" "$core0_stack"
+printf 'core1_stack_high_water_addr=%s used=0x%s\n' "$core1_stack_addr" "$core1_stack"
 
 if [[ "$result" != "$expected_result" ]]; then
   echo "Baker hardware pattern $pattern failed: result mismatch" >&2
@@ -133,6 +139,18 @@ fi
 
 if [[ -n "$expected_stage" && "$stage" != "$expected_stage" ]]; then
   echo "Baker hardware pattern $pattern failed: failure-stage mismatch" >&2
+  exit 1
+fi
+
+stack_budget_dec="$((24 * 1024))"
+core0_stack_dec="$((16#$core0_stack))"
+core1_stack_dec="$((16#$core1_stack))"
+if (( core0_stack_dec == 0 || core0_stack_dec > stack_budget_dec )); then
+  echo "Baker hardware pattern $pattern failed: core0 stack high-water invalid: $core0_stack_dec" >&2
+  exit 1
+fi
+if (( core1_stack_dec == 0 || core1_stack_dec > stack_budget_dec )); then
+  echo "Baker hardware pattern $pattern failed: core1 stack high-water invalid: $core1_stack_dec" >&2
   exit 1
 fi
 

@@ -6,7 +6,10 @@ use crate::{
         RandomSeed, StderrChunk, StdinChunk, StdinRequest, StdoutChunk, Wasip1ExitStatus,
         Wasip1StreamChunk,
     },
-    kernel::features::{Wasip1HandlerSet, Wasip1Syscall},
+    kernel::features::{
+        WASIP1_PREVIEW1_IMPORTS, WASIP1_PREVIEW1_MODULE, Wasip1HandlerSet, Wasip1ImportName,
+        Wasip1Syscall,
+    },
     kernel::policy::PolicySlotTable,
 };
 use hibana::substrate::wire::CodecError;
@@ -14,53 +17,22 @@ use hibana::substrate::wire::CodecError;
 const WASM_MAGIC: [u8; 4] = [0x00, 0x61, 0x73, 0x6d];
 const WASM_MODULE_VERSION: [u8; 4] = [0x01, 0x00, 0x00, 0x00];
 
-const IMPORT_MODULE: &[u8] = b"wasi_snapshot_preview1";
-const IMPORT_FD_WRITE: &[u8] = b"fd_write";
-const IMPORT_FD_READ: &[u8] = b"fd_read";
-const IMPORT_FD_FDSTAT_GET: &[u8] = b"fd_fdstat_get";
-const IMPORT_FD_CLOSE: &[u8] = b"fd_close";
-const IMPORT_FD_PRESTAT_GET: &[u8] = b"fd_prestat_get";
-const IMPORT_FD_PRESTAT_DIR_NAME: &[u8] = b"fd_prestat_dir_name";
-const IMPORT_FD_FILESTAT_GET: &[u8] = b"fd_filestat_get";
-const IMPORT_FD_READDIR: &[u8] = b"fd_readdir";
-const IMPORT_FD_ADVISE: &[u8] = b"fd_advise";
-const IMPORT_FD_ALLOCATE: &[u8] = b"fd_allocate";
-const IMPORT_FD_DATASYNC: &[u8] = b"fd_datasync";
-const IMPORT_FD_FDSTAT_SET_FLAGS: &[u8] = b"fd_fdstat_set_flags";
-const IMPORT_FD_FDSTAT_SET_RIGHTS: &[u8] = b"fd_fdstat_set_rights";
-const IMPORT_FD_FILESTAT_SET_SIZE: &[u8] = b"fd_filestat_set_size";
-const IMPORT_FD_FILESTAT_SET_TIMES: &[u8] = b"fd_filestat_set_times";
-const IMPORT_FD_PREAD: &[u8] = b"fd_pread";
-const IMPORT_FD_PWRITE: &[u8] = b"fd_pwrite";
-const IMPORT_FD_RENUMBER: &[u8] = b"fd_renumber";
-const IMPORT_FD_SEEK: &[u8] = b"fd_seek";
-const IMPORT_FD_SYNC: &[u8] = b"fd_sync";
-const IMPORT_FD_TELL: &[u8] = b"fd_tell";
-const IMPORT_CLOCK_RES_GET: &[u8] = b"clock_res_get";
-const IMPORT_CLOCK_TIME_GET: &[u8] = b"clock_time_get";
-const IMPORT_POLL_ONEOFF: &[u8] = b"poll_oneoff";
-const IMPORT_PATH_OPEN: &[u8] = b"path_open";
-const IMPORT_PATH_FILESTAT_GET: &[u8] = b"path_filestat_get";
-const IMPORT_PATH_READLINK: &[u8] = b"path_readlink";
-const IMPORT_PATH_CREATE_DIRECTORY: &[u8] = b"path_create_directory";
-const IMPORT_PATH_REMOVE_DIRECTORY: &[u8] = b"path_remove_directory";
-const IMPORT_PATH_UNLINK_FILE: &[u8] = b"path_unlink_file";
-const IMPORT_PATH_RENAME: &[u8] = b"path_rename";
-const IMPORT_PATH_FILESTAT_SET_TIMES: &[u8] = b"path_filestat_set_times";
-const IMPORT_PATH_LINK: &[u8] = b"path_link";
-const IMPORT_PATH_SYMLINK: &[u8] = b"path_symlink";
-const IMPORT_RANDOM_GET: &[u8] = b"random_get";
-const IMPORT_PROC_EXIT: &[u8] = b"proc_exit";
-const IMPORT_PROC_RAISE: &[u8] = b"proc_raise";
-const IMPORT_SCHED_YIELD: &[u8] = b"sched_yield";
-const IMPORT_ARGS_SIZES_GET: &[u8] = b"args_sizes_get";
-const IMPORT_ARGS_GET: &[u8] = b"args_get";
-const IMPORT_ENVIRON_SIZES_GET: &[u8] = b"environ_sizes_get";
-const IMPORT_ENVIRON_GET: &[u8] = b"environ_get";
-const IMPORT_SOCK_ACCEPT: &[u8] = b"sock_accept";
-const IMPORT_SOCK_RECV: &[u8] = b"sock_recv";
-const IMPORT_SOCK_SEND: &[u8] = b"sock_send";
-const IMPORT_SOCK_SHUTDOWN: &[u8] = b"sock_shutdown";
+const IMPORT_MODULE: &[u8] = WASIP1_PREVIEW1_MODULE.as_bytes();
+const IMPORT_FD_WRITE: &[u8] = Wasip1ImportName::FdWrite.name().as_bytes();
+const IMPORT_FD_READ: &[u8] = Wasip1ImportName::FdRead.name().as_bytes();
+const IMPORT_FD_FDSTAT_GET: &[u8] = Wasip1ImportName::FdFdstatGet.name().as_bytes();
+const IMPORT_FD_CLOSE: &[u8] = Wasip1ImportName::FdClose.name().as_bytes();
+const IMPORT_CLOCK_RES_GET: &[u8] = Wasip1ImportName::ClockResGet.name().as_bytes();
+const IMPORT_CLOCK_TIME_GET: &[u8] = Wasip1ImportName::ClockTimeGet.name().as_bytes();
+const IMPORT_POLL_ONEOFF: &[u8] = Wasip1ImportName::PollOneoff.name().as_bytes();
+const IMPORT_RANDOM_GET: &[u8] = Wasip1ImportName::RandomGet.name().as_bytes();
+const IMPORT_PROC_EXIT: &[u8] = Wasip1ImportName::ProcExit.name().as_bytes();
+const IMPORT_PROC_RAISE: &[u8] = Wasip1ImportName::ProcRaise.name().as_bytes();
+const IMPORT_SCHED_YIELD: &[u8] = Wasip1ImportName::SchedYield.name().as_bytes();
+const IMPORT_ARGS_SIZES_GET: &[u8] = Wasip1ImportName::ArgsSizesGet.name().as_bytes();
+const IMPORT_ARGS_GET: &[u8] = Wasip1ImportName::ArgsGet.name().as_bytes();
+const IMPORT_ENVIRON_SIZES_GET: &[u8] = Wasip1ImportName::EnvironSizesGet.name().as_bytes();
+const IMPORT_ENVIRON_GET: &[u8] = Wasip1ImportName::EnvironGet.name().as_bytes();
 const DISALLOWED_WASI_PREFIX: &[u8] = &[119, 97, 115, 105, 58];
 const DISALLOWED_VERSION_SUFFIX: &[u8] = &[64, 48, 46, 50];
 
@@ -306,6 +278,7 @@ impl MemoryLeaseRejectionTelemetry {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PicoFdRights {
+    None,
     Read,
     Write,
     ReadWrite,
@@ -314,6 +287,7 @@ pub enum PicoFdRights {
 impl PicoFdRights {
     const fn bits(self) -> u8 {
         match self {
+            Self::None => 0b00,
             Self::Read => 0b01,
             Self::Write => 0b10,
             Self::ReadWrite => 0b11,
@@ -1835,177 +1809,49 @@ fn validate_imports_against_handlers(
     bytes: &[u8],
     handlers: Wasip1HandlerSet,
 ) -> Result<(), Wasip1Error> {
-    if find_bytes(bytes, IMPORT_FD_WRITE).is_some() && !handlers.supports(Wasip1Syscall::FdWrite) {
-        return Err(Wasip1Error::UnsupportedByProfile);
-    }
-    if find_bytes(bytes, IMPORT_FD_READ).is_some() && !handlers.supports(Wasip1Syscall::FdRead) {
-        return Err(Wasip1Error::UnsupportedByProfile);
-    }
-    if find_bytes(bytes, IMPORT_FD_FDSTAT_GET).is_some()
-        && !handlers.supports(Wasip1Syscall::FdFdstatGet)
-    {
-        return Err(Wasip1Error::UnsupportedByProfile);
-    }
-    if find_bytes(bytes, IMPORT_FD_CLOSE).is_some() && !handlers.supports(Wasip1Syscall::FdClose) {
-        return Err(Wasip1Error::UnsupportedByProfile);
-    }
-    if has_path_minimal_import(bytes) && !handlers.supports(Wasip1Syscall::PathMinimal) {
-        return Err(Wasip1Error::UnsupportedByProfile);
-    }
-    if has_path_full_import(bytes) && !handlers.supports(Wasip1Syscall::PathFull) {
-        return Err(Wasip1Error::UnsupportedByProfile);
-    }
-    if has_socket_import(bytes) && !handlers.supports(Wasip1Syscall::NetworkObject) {
-        return Err(Wasip1Error::UnsupportedByProfile);
-    }
-    if find_bytes(bytes, IMPORT_CLOCK_RES_GET).is_some()
-        && !handlers.supports(Wasip1Syscall::ClockResGet)
-    {
-        return Err(Wasip1Error::UnsupportedByProfile);
-    }
-    if find_bytes(bytes, IMPORT_CLOCK_TIME_GET).is_some()
-        && !handlers.supports(Wasip1Syscall::ClockTimeGet)
-    {
-        return Err(Wasip1Error::UnsupportedByProfile);
-    }
-    if find_bytes(bytes, IMPORT_POLL_ONEOFF).is_some()
-        && !handlers.supports(Wasip1Syscall::PollOneoff)
-    {
-        return Err(Wasip1Error::UnsupportedByProfile);
-    }
-    if find_bytes(bytes, IMPORT_RANDOM_GET).is_some()
-        && !handlers.supports(Wasip1Syscall::RandomGet)
-    {
-        return Err(Wasip1Error::UnsupportedByProfile);
-    }
-    if find_bytes(bytes, IMPORT_PROC_EXIT).is_some() && !handlers.supports(Wasip1Syscall::ProcExit)
-    {
-        return Err(Wasip1Error::UnsupportedByProfile);
-    }
-    if find_bytes(bytes, IMPORT_PROC_RAISE).is_some()
-        && !handlers.supports(Wasip1Syscall::ProcRaise)
-    {
-        return Err(Wasip1Error::UnsupportedByProfile);
-    }
-    if find_bytes(bytes, IMPORT_SCHED_YIELD).is_some()
-        && !handlers.supports(Wasip1Syscall::SchedYield)
-    {
-        return Err(Wasip1Error::UnsupportedByProfile);
-    }
-    if (find_bytes(bytes, IMPORT_ARGS_SIZES_GET).is_some()
-        || find_bytes(bytes, IMPORT_ARGS_GET).is_some()
-        || find_bytes(bytes, IMPORT_ENVIRON_SIZES_GET).is_some()
-        || find_bytes(bytes, IMPORT_ENVIRON_GET).is_some())
-        && !handlers.supports(Wasip1Syscall::ArgsEnv)
-    {
-        return Err(Wasip1Error::UnsupportedByProfile);
+    for import in WASIP1_PREVIEW1_IMPORTS {
+        if find_bytes(bytes, import.name().as_bytes()).is_some()
+            && !handlers.supports(import.syscall())
+        {
+            return Err(Wasip1Error::UnsupportedByProfile);
+        }
     }
     Ok(())
-}
-
-fn has_path_minimal_import(bytes: &[u8]) -> bool {
-    [
-        IMPORT_FD_PRESTAT_GET,
-        IMPORT_FD_PRESTAT_DIR_NAME,
-        IMPORT_FD_FILESTAT_GET,
-        IMPORT_FD_READDIR,
-        IMPORT_PATH_OPEN,
-        IMPORT_PATH_FILESTAT_GET,
-        IMPORT_PATH_READLINK,
-        IMPORT_PATH_CREATE_DIRECTORY,
-        IMPORT_PATH_REMOVE_DIRECTORY,
-        IMPORT_PATH_UNLINK_FILE,
-        IMPORT_PATH_RENAME,
-    ]
-    .iter()
-    .any(|import| find_bytes(bytes, import).is_some())
-}
-
-fn has_path_full_import(bytes: &[u8]) -> bool {
-    [
-        IMPORT_FD_ADVISE,
-        IMPORT_FD_ALLOCATE,
-        IMPORT_FD_DATASYNC,
-        IMPORT_FD_FDSTAT_SET_FLAGS,
-        IMPORT_FD_FDSTAT_SET_RIGHTS,
-        IMPORT_FD_FILESTAT_SET_SIZE,
-        IMPORT_FD_FILESTAT_SET_TIMES,
-        IMPORT_FD_PREAD,
-        IMPORT_FD_PWRITE,
-        IMPORT_FD_RENUMBER,
-        IMPORT_FD_SEEK,
-        IMPORT_FD_SYNC,
-        IMPORT_FD_TELL,
-        IMPORT_PATH_FILESTAT_SET_TIMES,
-        IMPORT_PATH_LINK,
-        IMPORT_PATH_SYMLINK,
-    ]
-    .iter()
-    .any(|import| find_bytes(bytes, import).is_some())
-}
-
-fn has_socket_import(bytes: &[u8]) -> bool {
-    [
-        IMPORT_SOCK_ACCEPT,
-        IMPORT_SOCK_RECV,
-        IMPORT_SOCK_SEND,
-        IMPORT_SOCK_SHUTDOWN,
-    ]
-    .iter()
-    .any(|import| find_bytes(bytes, import).is_some())
 }
 
 fn require_path_minimal_imports(bytes: &[u8]) -> Result<(), Wasip1Error> {
-    for import in [
-        IMPORT_FD_PRESTAT_GET,
-        IMPORT_FD_PRESTAT_DIR_NAME,
-        IMPORT_FD_FILESTAT_GET,
-        IMPORT_FD_READDIR,
-        IMPORT_PATH_OPEN,
-        IMPORT_PATH_FILESTAT_GET,
-        IMPORT_PATH_READLINK,
-        IMPORT_PATH_CREATE_DIRECTORY,
-        IMPORT_PATH_REMOVE_DIRECTORY,
-        IMPORT_PATH_UNLINK_FILE,
-        IMPORT_PATH_RENAME,
-    ] {
-        require_import(bytes, import, Wasip1Error::MissingPathMinimalImport)?;
-    }
-    Ok(())
+    require_imports_for_syscall(
+        bytes,
+        Wasip1Syscall::PathMinimal,
+        Wasip1Error::MissingPathMinimalImport,
+    )
 }
 
 fn require_path_full_imports(bytes: &[u8]) -> Result<(), Wasip1Error> {
-    for import in [
-        IMPORT_FD_ADVISE,
-        IMPORT_FD_ALLOCATE,
-        IMPORT_FD_DATASYNC,
-        IMPORT_FD_FDSTAT_SET_FLAGS,
-        IMPORT_FD_FDSTAT_SET_RIGHTS,
-        IMPORT_FD_FILESTAT_SET_SIZE,
-        IMPORT_FD_FILESTAT_SET_TIMES,
-        IMPORT_FD_PREAD,
-        IMPORT_FD_PWRITE,
-        IMPORT_FD_RENUMBER,
-        IMPORT_FD_SEEK,
-        IMPORT_FD_SYNC,
-        IMPORT_FD_TELL,
-        IMPORT_PATH_FILESTAT_SET_TIMES,
-        IMPORT_PATH_LINK,
-        IMPORT_PATH_SYMLINK,
-    ] {
-        require_import(bytes, import, Wasip1Error::MissingPathFullImport)?;
-    }
-    Ok(())
+    require_imports_for_syscall(
+        bytes,
+        Wasip1Syscall::PathFull,
+        Wasip1Error::MissingPathFullImport,
+    )
 }
 
 fn require_socket_imports(bytes: &[u8]) -> Result<(), Wasip1Error> {
-    for import in [
-        IMPORT_SOCK_ACCEPT,
-        IMPORT_SOCK_RECV,
-        IMPORT_SOCK_SEND,
-        IMPORT_SOCK_SHUTDOWN,
-    ] {
-        require_import(bytes, import, Wasip1Error::MissingSocketImport)?;
+    require_imports_for_syscall(
+        bytes,
+        Wasip1Syscall::NetworkObject,
+        Wasip1Error::MissingSocketImport,
+    )
+}
+
+fn require_imports_for_syscall(
+    bytes: &[u8],
+    syscall: Wasip1Syscall,
+    error: Wasip1Error,
+) -> Result<(), Wasip1Error> {
+    for import in WASIP1_PREVIEW1_IMPORTS {
+        if import.syscall() == syscall {
+            require_import(bytes, import.name().as_bytes(), error)?;
+        }
     }
     Ok(())
 }

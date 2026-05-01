@@ -377,6 +377,9 @@ impl<const N: usize, const PATH: usize, const DATA: usize> ChoreoFsStore<N, PATH
     }
 
     pub fn open(&self, path: &[u8], rights: PicoFdRights) -> Result<ChoreoFsOpened, ChoreoFsError> {
+        if rights == PicoFdRights::None {
+            return Err(ChoreoFsError::PermissionDenied);
+        }
         let path = normalize_path::<PATH>(path)?;
         let object_id = self.lookup(path.as_bytes())?;
         let object = self.object(object_id)?;
@@ -716,7 +719,8 @@ pub const fn pico_rights_from_wasip1_base(rights_base: u64) -> PicoFdRights {
     match (reads, writes) {
         (true, true) => PicoFdRights::ReadWrite,
         (false, true) => PicoFdRights::Write,
-        (true, false) | (false, false) => PicoFdRights::Read,
+        (true, false) => PicoFdRights::Read,
+        (false, false) => PicoFdRights::None,
     }
 }
 

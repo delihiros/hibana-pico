@@ -1,83 +1,18 @@
 #![cfg_attr(all(target_arch = "arm", target_os = "none"), no_std)]
 #![cfg_attr(all(target_arch = "arm", target_os = "none"), no_main)]
 
-#[cfg(any(
-    all(
-        feature = "baker-bad-order-demo",
-        any(
-            feature = "baker-chaser-demo",
-            feature = "baker-ordinary-std-demo",
-            feature = "baker-invalid-fd-demo",
-            feature = "baker-bad-payload-demo",
-            feature = "baker-choreofs-demo",
-            feature = "baker-choreofs-bad-path-demo",
-            feature = "baker-choreofs-bad-payload-demo",
-            feature = "baker-choreofs-wrong-object-demo"
-        )
-    ),
-    all(
-        feature = "baker-chaser-demo",
-        any(
-            feature = "baker-ordinary-std-demo",
-            feature = "baker-invalid-fd-demo",
-            feature = "baker-bad-payload-demo",
-            feature = "baker-choreofs-demo",
-            feature = "baker-choreofs-bad-path-demo",
-            feature = "baker-choreofs-bad-payload-demo",
-            feature = "baker-choreofs-wrong-object-demo"
-        )
-    ),
-    all(
-        feature = "baker-ordinary-std-demo",
-        any(
-            feature = "baker-invalid-fd-demo",
-            feature = "baker-bad-payload-demo",
-            feature = "baker-choreofs-demo",
-            feature = "baker-choreofs-bad-path-demo",
-            feature = "baker-choreofs-bad-payload-demo",
-            feature = "baker-choreofs-wrong-object-demo"
-        )
-    ),
-    all(
-        feature = "baker-invalid-fd-demo",
-        any(
-            feature = "baker-bad-payload-demo",
-            feature = "baker-choreofs-demo",
-            feature = "baker-choreofs-bad-path-demo",
-            feature = "baker-choreofs-bad-payload-demo",
-            feature = "baker-choreofs-wrong-object-demo"
-        )
-    ),
-    all(
-        feature = "baker-bad-payload-demo",
-        any(
-            feature = "baker-choreofs-demo",
-            feature = "baker-choreofs-bad-path-demo",
-            feature = "baker-choreofs-bad-payload-demo",
-            feature = "baker-choreofs-wrong-object-demo"
-        )
-    ),
-    all(
-        feature = "baker-choreofs-demo",
-        any(
-            feature = "baker-choreofs-bad-path-demo",
-            feature = "baker-choreofs-bad-payload-demo",
-            feature = "baker-choreofs-wrong-object-demo"
-        )
-    ),
-    all(
-        feature = "baker-choreofs-bad-path-demo",
-        any(
-            feature = "baker-choreofs-bad-payload-demo",
-            feature = "baker-choreofs-wrong-object-demo"
-        )
-    ),
-    all(
-        feature = "baker-choreofs-bad-payload-demo",
-        feature = "baker-choreofs-wrong-object-demo"
-    )
-))]
-compile_error!("select at most one Baker WASI guest pattern");
+mod guest;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+mod hardware;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+mod stages;
+
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+use guest::{WASIP1_LED_GUEST, baker_wasip1_handler_set};
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+use hardware::*;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+use stages::*;
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]
 use core::{
@@ -138,31 +73,46 @@ use hibana_pico::{
         LABEL_TIMER_SLEEP_UNTIL, LABEL_WASI_FD_WRITE, LABEL_WASI_FD_WRITE_RET,
         LABEL_WASI_PATH_OPEN, LABEL_WASI_PATH_OPEN_RET, LABEL_WASI_POLL_ONEOFF,
         LABEL_WASI_POLL_ONEOFF_RET, LABEL_WASI_PROC_EXIT, MemBorrow, MemReadGrantControl,
-        MemRelease, MemRights, POLICY_BAKER_TRAFFIC_LOOP, PathOpen, PathOpened, PollReady,
-        ProcExitStatus, TimerSleepDone, TimerSleepUntil, WASIP1_STREAM_CHUNK_CAPACITY,
+        MemRelease, MemRights, POLICY_BAKER_TRAFFIC_LOOP, PathOpen, PollReady, ProcExitStatus,
+        TimerSleepDone, TimerSleepUntil, WASIP1_STREAM_CHUNK_CAPACITY,
     },
     kernel::{
-        choreofs::ChoreoFsError,
         engine::wasm::{
             CoreWasip1Instance, CoreWasip1PathCall, CoreWasip1PathKind, CoreWasip1Trap, WasmError,
         },
         fd_object::{GpioFdWriteError, check_gpio_object_fd_write},
-        features::Wasip1HandlerSet,
         guest_ledger::GuestLedger,
         resolver::{
             BakerTrafficLoopResolver, InterruptEvent, PicoInterruptResolver, ResolvedInterrupt,
         },
     },
     machine::rp2040::baker_link::{
-        BAKER_LINK_CHOREOFS_PREOPEN_FD, BAKER_LINK_LED_ACTIVE_HIGH, BAKER_LINK_LED_PINS,
-        BAKER_LINK_TRAFFIC_LIGHT_PATTERN_STEPS, BakerLinkLedResourceStore,
-        apply_baker_link_led_bank_set, baker_link_choreofs_ledger, baker_link_led_fd_write_route,
-        baker_link_led_resource_store, open_baker_link_choreofs_path,
+        BAKER_LINK_LED_ACTIVE_HIGH, BAKER_LINK_LED_PINS, BAKER_LINK_TRAFFIC_LIGHT_PATTERN_STEPS,
+        baker_link_led_fd_write_route,
     },
     machine::rp2040::sio::Rp2040SioBackend,
     machine::rp2040::{clock, timer, uart},
     substrate::exec::{park, run_current_task, signal, wait_until},
     substrate::transport::SioTransport,
+};
+
+#[cfg(all(
+    target_arch = "arm",
+    target_os = "none",
+    any(
+        feature = "baker-choreofs-demo",
+        feature = "baker-choreofs-bad-path-demo",
+        feature = "baker-choreofs-bad-payload-demo",
+        feature = "baker-choreofs-wrong-object-demo"
+    )
+))]
+use hibana_pico::{
+    choreography::protocol::PathOpened,
+    kernel::choreofs::ChoreoFsError,
+    machine::rp2040::baker_link::{
+        BAKER_LINK_CHOREOFS_PREOPEN_FD, BakerLinkLedResourceStore, baker_link_choreofs_ledger,
+        baker_link_led_resource_store, open_baker_link_choreofs_path,
+    },
 };
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]
@@ -174,6 +124,7 @@ static BOOT2: [u8; 256] = rp2040_boot2::BOOT_LOADER_W25Q080;
 unsafe extern "C" {
     static __stack_top: u32;
     static __core1_stack_top: u32;
+    static __stack_limit: u32;
     static __data_load_start: u8;
     static mut __data_start: u8;
     static mut __data_end: u8;
@@ -202,236 +153,6 @@ const FIFO_WOF: u32 = 1 << 2;
 #[cfg(all(target_arch = "arm", target_os = "none"))]
 const FIFO_ROE: u32 = 1 << 3;
 
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const IO_BANK0_BASE: usize = 0x4001_4000;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const PADS_BANK0_BASE: usize = 0x4001_c000;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const RESETS_BASE: usize = 0x4000_c000;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const RESETS_RESET_CLR: *mut u32 = (RESETS_BASE + 0x3000) as *mut u32;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const RESETS_RESET_DONE: *const u32 = (RESETS_BASE + 0x08) as *const u32;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const RESETS_IO_BANK0: u32 = 1 << 5;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const RESETS_PADS_BANK0: u32 = 1 << 8;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const GPIO_OUT_SET: *mut u32 = (SIO_BASE + 0x14) as *mut u32;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const GPIO_OUT_CLR: *mut u32 = (SIO_BASE + 0x18) as *mut u32;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const GPIO_OE_SET: *mut u32 = (SIO_BASE + 0x24) as *mut u32;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const GPIO_FUNC_SIO: u32 = 5;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const GPIO_PAD_DEFAULT: u32 = 0x56;
-
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const RESULT_SUCCESS: u32 = 0x4849_4f4b;
-#[cfg(all(
-    target_arch = "arm",
-    target_os = "none",
-    any(
-        feature = "baker-bad-order-demo",
-        feature = "baker-invalid-fd-demo",
-        feature = "baker-bad-payload-demo",
-        feature = "baker-choreofs-bad-path-demo",
-        feature = "baker-choreofs-bad-payload-demo",
-        feature = "baker-choreofs-wrong-object-demo"
-    )
-))]
-const RESULT_EXPECTED_REJECT: u32 = 0x4849_524a;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const RESULT_FAILURE: u32 = 0x4849_4641;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_CORE0_START: u32 = 0x4849_0001;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_CORE1_LAUNCHED: u32 = 0x4849_0002;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_GPIO_READY: u32 = 0x4849_0003;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_RUNTIME_BEGIN: u32 = 0x4849_0004;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_RENDEZVOUS_READY: u32 = 0x4849_0005;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_PROGRAM_READY: u32 = 0x4849_0006;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_KERNEL_ATTACHED: u32 = 0x4849_0007;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_ATTACHED: u32 = 0x4849_0008;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_GPIO_ATTACHED: u32 = 0x4849_0009;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_RUNTIME_READY: u32 = 0x4849_000a;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_FIRST_LED_WRITE_DONE: u32 = 0x4849_000b;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_POLL_ON_DONE: u32 = 0x4849_000c;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_FINAL_LED_WRITE_DONE: u32 = 0x4849_000d;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_KERNEL_POLL_RECV: u32 = 0x4849_0010;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_KERNEL_TIMER_SLEEP_SENT: u32 = 0x4849_0011;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_TIMER_SLEEP_RECV: u32 = 0x4849_0012;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_TIMER_ALARM_ARMED: u32 = 0x4849_0013;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_TIMER_RAW_READY: u32 = 0x4849_0014;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_TIMER_DONE_SENT: u32 = 0x4849_0015;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_KERNEL_FD_WRITE_BEGIN: u32 = 0x4849_0020;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_KERNEL_FD_WRITE_BORROW_RECV: u32 = 0x4849_0021;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_KERNEL_FD_WRITE_GRANT_SENT: u32 = 0x4849_0022;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_KERNEL_FD_WRITE_REQ_RECV: u32 = 0x4849_0023;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_KERNEL_FD_WRITE_GPIO_DONE: u32 = 0x4849_0024;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_KERNEL_PROC_EXIT_RECV: u32 = 0x4849_0025;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_KERNEL_RUN_SEND_BEGIN: u32 = 0x4849_0026;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_KERNEL_RUN_SEND_DONE: u32 = 0x4849_0027;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_BEGIN: u32 = 0x4849_0030;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_FD_WRITE_BEGIN: u32 = 0x4849_0031;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_FD_WRITE_BORROW_SENT: u32 = 0x4849_0032;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_RUNTIME_READY_SEEN: u32 = 0x4849_0033;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_ENDPOINT_READY: u32 = 0x4849_0034;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_PARSE_DONE: u32 = 0x4849_0035;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_PROC_EXIT_SENT: u32 = 0x4849_0036;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_LOOP_CONTINUE_SENT: u32 = 0x4849_0037;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_LOOP_BREAK_SENT: u32 = 0x4849_0038;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_TRAP_FD_WRITE: u32 = 0x4849_0039;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_TRAP_POLL_ONEOFF: u32 = 0x4849_003a;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_TRAP_ENVIRON_SIZES: u32 = 0x4849_003b;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_TRAP_ENVIRON_GET: u32 = 0x4849_003c;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_TRAP_ARGS_SIZES: u32 = 0x4849_003d;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_TRAP_ARGS_GET: u32 = 0x4849_003e;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_TRAP_MEMORY_GROW: u32 = 0x4849_003f;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_TRAP_UNSUPPORTED: u32 = 0x4849_0040;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_RUN_RECV_BEGIN: u32 = 0x4849_0041;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_BORROW_SEND_ERR: u32 = 0x4849_0042;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_RUN_RECV_DONE: u32 = 0x4849_0046;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_KERNEL_RUN_SEND_ERR: u32 = 0x4849_0047;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_RUN_RECV_ERR: u32 = 0x4849_0048;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_RUN_MISMATCH: u32 = 0x4849_0049;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_KERNEL_RUN_FLOW_ERR: u32 = 0x4849_004a;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_RESUME_ERR_TRUNCATED: u32 = 0x4849_0101;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_RESUME_ERR_INVALID: u32 = 0x4849_0102;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_RESUME_ERR_UNSUPPORTED: u32 = 0x4849_0103;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_RESUME_ERR_STACK_OVERFLOW: u32 = 0x4849_0104;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_RESUME_ERR_STACK_UNDERFLOW: u32 = 0x4849_0105;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_RESUME_ERR_PENDING: u32 = 0x4849_0106;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_RESUME_ERR_REPLY: u32 = 0x4849_0107;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_RESUME_ERR_TRAP: u32 = 0x4849_0108;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_RESUME_ERR_FUEL: u32 = 0x4849_0109;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_RESUME_ERR_OPCODE_BASE: u32 = 0x4849_0200;
-#[cfg(all(
-    target_arch = "arm",
-    target_os = "none",
-    feature = "baker-bad-order-demo"
-))]
-const STAGE_BAD_ORDER_POLL_REJECTED: u32 = 0x4849_0043;
-#[cfg(all(
-    target_arch = "arm",
-    target_os = "none",
-    feature = "baker-invalid-fd-demo"
-))]
-const STAGE_INVALID_FD_REJECTED: u32 = 0x4849_0044;
-#[cfg(all(
-    target_arch = "arm",
-    target_os = "none",
-    feature = "baker-bad-payload-demo"
-))]
-const STAGE_BAD_PAYLOAD_REJECTED: u32 = 0x4849_0045;
-#[cfg(all(
-    target_arch = "arm",
-    target_os = "none",
-    feature = "baker-choreofs-bad-path-demo"
-))]
-const STAGE_BAD_PATH_REJECTED: u32 = 0x4849_004b;
-#[cfg(all(
-    target_arch = "arm",
-    target_os = "none",
-    feature = "baker-choreofs-bad-payload-demo"
-))]
-const STAGE_CHOREOFS_BAD_PAYLOAD_REJECTED: u32 = 0x4849_004c;
-#[cfg(all(
-    target_arch = "arm",
-    target_os = "none",
-    feature = "baker-choreofs-wrong-object-demo"
-))]
-const STAGE_WRONG_OBJECT_REJECTED: u32 = 0x4849_004d;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_TRAP_PATH_OPEN: u32 = 0x4849_0050;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_PATH_OPEN_BEGIN: u32 = 0x4849_0051;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_PATH_OPEN_BORROW_SENT: u32 = 0x4849_0052;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_PATH_OPEN_GRANT_RECV: u32 = 0x4849_0053;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_PATH_OPEN_PATH_DECODED: u32 = 0x4849_0054;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_PATH_OPEN_REQ_SENT: u32 = 0x4849_0055;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_PATH_OPEN_RET_RECV: u32 = 0x4849_0056;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_PATH_OPEN_RELEASE_SENT: u32 = 0x4849_0057;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_ENGINE_PATH_OPEN_COMPLETED: u32 = 0x4849_0058;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_KERNEL_PATH_OPEN_BORROW_RECV: u32 = 0x4849_0060;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_KERNEL_PATH_OPEN_GRANT_SENT: u32 = 0x4849_0061;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_KERNEL_PATH_OPEN_REQ_RECV: u32 = 0x4849_0062;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_KERNEL_PATH_OPEN_OBJECT_OPENED: u32 = 0x4849_0063;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_KERNEL_PATH_OPEN_RET_SENT: u32 = 0x4849_0064;
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const STAGE_KERNEL_PATH_OPEN_RELEASE_RECV: u32 = 0x4849_0065;
 #[cfg(all(target_arch = "arm", target_os = "none"))]
 const SLAB_BYTES: usize = 124 * 1024;
 #[cfg(all(target_arch = "arm", target_os = "none"))]
@@ -473,82 +194,17 @@ type BakerLedger = GuestLedger<4, 1, 1>;
 type BakerLedger = GuestLedger<3, 1, 1>;
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]
-#[cfg(not(any(
-    feature = "baker-bad-order-demo",
-    feature = "baker-chaser-demo",
-    feature = "baker-ordinary-std-demo",
-    feature = "baker-choreofs-demo",
-    feature = "baker-choreofs-bad-path-demo",
-    feature = "baker-choreofs-bad-payload-demo",
-    feature = "baker-choreofs-wrong-object-demo",
-    feature = "baker-invalid-fd-demo",
-    feature = "baker-bad-payload-demo"
-)))]
-static WASIP1_LED_GUEST: &[u8] = include_bytes!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/target/wasip1-apps/wasm32-wasip1/release/wasip1-led-blink.wasm"
-));
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-#[cfg(feature = "baker-bad-order-demo")]
-static WASIP1_LED_GUEST: &[u8] = include_bytes!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/target/wasip1-apps/wasm32-wasip1/release/wasip1-led-bad-order.wasm"
-));
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-#[cfg(feature = "baker-chaser-demo")]
-static WASIP1_LED_GUEST: &[u8] = include_bytes!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/target/wasip1-apps/wasm32-wasip1/release/wasip1-led-chaser.wasm"
-));
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-#[cfg(feature = "baker-invalid-fd-demo")]
-static WASIP1_LED_GUEST: &[u8] = include_bytes!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/target/wasip1-apps/wasm32-wasip1/release/wasip1-led-invalid-fd.wasm"
-));
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-#[cfg(feature = "baker-bad-payload-demo")]
-static WASIP1_LED_GUEST: &[u8] = include_bytes!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/target/wasip1-apps/wasm32-wasip1/release/wasip1-led-bad-payload.wasm"
-));
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-#[cfg(feature = "baker-ordinary-std-demo")]
-static WASIP1_LED_GUEST: &[u8] = include_bytes!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/target/wasip1-apps/wasm32-wasip1/release/wasip1-led-ordinary-std-chaser.wasm"
-));
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-#[cfg(feature = "baker-choreofs-demo")]
-static WASIP1_LED_GUEST: &[u8] = include_bytes!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/target/wasip1-apps/wasm32-wasip1/release/wasip1-led-choreofs-open.wasm"
-));
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-#[cfg(feature = "baker-choreofs-bad-path-demo")]
-static WASIP1_LED_GUEST: &[u8] = include_bytes!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/target/wasip1-apps/wasm32-wasip1/release/wasip1-led-choreofs-bad-path.wasm"
-));
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-#[cfg(feature = "baker-choreofs-bad-payload-demo")]
-static WASIP1_LED_GUEST: &[u8] = include_bytes!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/target/wasip1-apps/wasm32-wasip1/release/wasip1-led-choreofs-bad-payload.wasm"
-));
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-#[cfg(feature = "baker-choreofs-wrong-object-demo")]
-static WASIP1_LED_GUEST: &[u8] = include_bytes!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/target/wasip1-apps/wasm32-wasip1/release/wasip1-led-choreofs-wrong-object.wasm"
-));
-
-#[cfg(all(target_arch = "arm", target_os = "none"))]
 #[unsafe(no_mangle)]
 static mut HIBANA_DEMO_RESULT: u32 = 0;
 #[cfg(all(target_arch = "arm", target_os = "none"))]
 #[unsafe(no_mangle)]
 static mut HIBANA_DEMO_FAILURE_STAGE: u32 = 0;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+#[unsafe(no_mangle)]
+static mut HIBANA_DEMO_CORE0_STACK_MAX_USED_BYTES: u32 = 0;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+#[unsafe(no_mangle)]
+static mut HIBANA_DEMO_CORE1_STACK_MAX_USED_BYTES: u32 = 0;
 #[cfg(all(target_arch = "arm", target_os = "none"))]
 static mut CORE1_STARTED: u32 = 0;
 #[cfg(all(target_arch = "arm", target_os = "none"))]
@@ -556,8 +212,41 @@ static mut RUNTIME_READY: u32 = 0;
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]
 fn mark_stage(value: u32) {
+    record_stack_high_water();
     unsafe {
         write_volatile(core::ptr::addr_of_mut!(HIBANA_DEMO_RESULT), value);
+    }
+}
+
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+fn record_stack_high_water() {
+    let sp: u32;
+    unsafe {
+        asm!("mov {0}, sp", out(reg) sp, options(nomem, nostack, preserves_flags));
+    }
+    let core = core_id();
+    let (top, limit, slot) = if core == 0 {
+        (
+            core::ptr::addr_of!(__stack_top) as u32,
+            core::ptr::addr_of!(__core1_stack_top) as u32,
+            core::ptr::addr_of_mut!(HIBANA_DEMO_CORE0_STACK_MAX_USED_BYTES),
+        )
+    } else {
+        (
+            core::ptr::addr_of!(__core1_stack_top) as u32,
+            core::ptr::addr_of!(__stack_limit) as u32,
+            core::ptr::addr_of_mut!(HIBANA_DEMO_CORE1_STACK_MAX_USED_BYTES),
+        )
+    };
+    if sp < limit || sp > top {
+        return;
+    }
+    let used = top.saturating_sub(sp);
+    unsafe {
+        let current = read_volatile(slot);
+        if used > current {
+            write_volatile(slot, used);
+        }
     }
 }
 
@@ -819,59 +508,6 @@ fn attach_or_fail<T>(result: Result<T, AttachError>, stage: &str) -> T {
         Err(AttachError::Control(_)) => fail_closed(stage),
         Err(AttachError::Rendezvous(_)) => fail_closed(stage),
     }
-}
-
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-fn gpio_ctrl(pin: u8) -> *mut u32 {
-    (IO_BANK0_BASE + 0x04 + (pin as usize * 8)) as *mut u32
-}
-
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-fn gpio_pad(pin: u8) -> *mut u32 {
-    (PADS_BANK0_BASE + 0x04 + (pin as usize * 4)) as *mut u32
-}
-
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-fn rp2040_gpio_bank_init() {
-    let reset_mask = RESETS_IO_BANK0 | RESETS_PADS_BANK0;
-    unsafe {
-        write_volatile(RESETS_RESET_CLR, reset_mask);
-        while read_volatile(RESETS_RESET_DONE) & reset_mask != reset_mask {
-            core::hint::spin_loop();
-        }
-    }
-}
-
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-fn rp2040_gpio_init_output(pin: u8, initial_high: bool) {
-    let mask = 1u32 << pin;
-    unsafe {
-        write_volatile(gpio_pad(pin), GPIO_PAD_DEFAULT);
-        write_volatile(gpio_ctrl(pin), GPIO_FUNC_SIO);
-        if initial_high {
-            write_volatile(GPIO_OUT_SET, mask);
-        } else {
-            write_volatile(GPIO_OUT_CLR, mask);
-        }
-        write_volatile(GPIO_OE_SET, mask);
-    }
-}
-
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-fn rp2040_gpio_write(pin: u8, high: bool) {
-    let mask = 1u32 << pin;
-    unsafe {
-        if high {
-            write_volatile(GPIO_OUT_SET, mask);
-        } else {
-            write_volatile(GPIO_OUT_CLR, mask);
-        }
-    }
-}
-
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-fn rp2040_gpio_apply_baker_led_set(set: GpioSet) {
-    apply_baker_link_led_bank_set(rp2040_gpio_write, set);
 }
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]
@@ -1189,7 +825,16 @@ async fn kernel_fd_write(
         .unwrap_or_else(|_| fail_closed("[core0] release led lease"));
 }
 
-#[cfg(all(target_arch = "arm", target_os = "none"))]
+#[cfg(all(
+    target_arch = "arm",
+    target_os = "none",
+    any(
+        feature = "baker-choreofs-demo",
+        feature = "baker-choreofs-bad-path-demo",
+        feature = "baker-choreofs-bad-payload-demo",
+        feature = "baker-choreofs-wrong-object-demo"
+    )
+))]
 async fn kernel_path_open(
     endpoint: &mut KernelEndpoint,
     ledger: &mut BakerLedger,
@@ -1265,7 +910,16 @@ async fn kernel_path_open(
         .unwrap_or_else(|_| fail_closed("[core0] release path_open lease"));
 }
 
-#[cfg(all(target_arch = "arm", target_os = "none"))]
+#[cfg(all(
+    target_arch = "arm",
+    target_os = "none",
+    any(
+        feature = "baker-choreofs-demo",
+        feature = "baker-choreofs-bad-path-demo",
+        feature = "baker-choreofs-bad-payload-demo",
+        feature = "baker-choreofs-wrong-object-demo"
+    )
+))]
 fn handle_baker_choreofs_open_error(error: ChoreoFsError) -> ! {
     #[cfg(feature = "baker-choreofs-bad-path-demo")]
     {
@@ -1906,22 +1560,6 @@ fn core1_main() -> ! {
     mark_stage(STAGE_ENGINE_PARSE_DONE);
     run_current_task(engine_session(endpoint, guest));
     park();
-}
-
-#[cfg(all(target_arch = "arm", target_os = "none"))]
-const fn baker_wasip1_handler_set() -> Wasip1HandlerSet {
-    if cfg!(any(
-        feature = "baker-choreofs-demo",
-        feature = "baker-choreofs-bad-path-demo",
-        feature = "baker-choreofs-bad-payload-demo",
-        feature = "baker-choreofs-wrong-object-demo"
-    )) {
-        Wasip1HandlerSet::PICO_STD_CHOREOFS
-    } else if cfg!(feature = "baker-ordinary-std-demo") {
-        Wasip1HandlerSet::PICO_STD_START
-    } else {
-        Wasip1HandlerSet::PICO_MIN
-    }
 }
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]

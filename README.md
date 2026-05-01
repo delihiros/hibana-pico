@@ -40,7 +40,7 @@ package. The important state is:
   path: fds, memory leases, pending `poll_oneoff` tokens, quotas, and errno
   mapping live there, while choreography control messages still own authority
   and legal order. In the ChoreoFS Baker proof,
-  `path_open("/device/led/green")` mints fd `3`, orange mints fd `4`, and red
+  `path_open("device/led/green")` mints fd `3`, orange mints fd `4`, and red
   mints fd `5`; those fds route to GP22, GP21, and GP20. Each visible
   transition is a real WASI import trap that enters the Engine localside; each
   wait is admitted through the timer resolver before Kernel can return
@@ -201,6 +201,11 @@ profile-rp2040-picow-swarm-min
   -> swarm-frame + remote/datagram object capacity
 ```
 
+Status note: Pico W is currently represented as a capacity/profile target.
+Dedicated Pico W firmware and physical CYW43439 gates are still pending, so the
+RP2040 Baker proof and Pico 2 W QEMU proof must not be read as physical Pico W
+Wi-Fi success.
+
 The higher-capacity RP2350/Pico 2 W profile uses the same semantic shape with
 RP2350 board capacity:
 
@@ -258,7 +263,7 @@ The fastest way to audit a proof is to read one row left to right:
 | Timer sleep | `src/choreography/local.rs::timer_sleep_roles` | `tests/host_timer_sleep.rs` drives `flow::<TimerSleepUntil>().send`, `recv`, resolver admission, then `flow::<TimerSleepDone>().send` | `src/kernel/resolver.rs` converts `InterruptEvent::TimerTick` into `ResolvedInterrupt::TimerSleepDone`; `src/kernel/device/timer.rs` only completes due waits |
 | WASI clock | `src/choreography/local.rs::wasip1_clock_now_roles` | `tests/host_wasip1_syscalls.rs` and `src/projects/rp2040_wasm/main.rs` drive request/reply with `Wasip1ClockNow` | no interrupt resolver; this is a synchronous clock syscall returning `ClockNow` |
 | Baker traffic light | `src/choreography/local.rs::baker_led_blink_roles` | `src/kernel/engine/wasm.rs::CoreWasip1Instance` executes the no-main `wasm32-wasip1` artifact and maps real `wasi_snapshot_preview1.fd_write` / `poll_oneoff` imports; `tests/host_baker_led_fd.rs` and `src/projects/baker_link_led/main.rs` turn those traps into `fd_write("1" / "0") -> Kernel->GPIO -> poll_oneoff -> Kernel->Timer`; `src/kernel/guest_ledger.rs::GuestLedger` owns the app-local fd view, lease, pending, quota, and errno facts | `src/machine/rp2040/baker_link.rs` installs ChoreoFS `GpioDevice` objects, mints fds `3,4,5`, and supplies only the Baker fd/pin/active-high map for GP22/GP21/GP20; `src/kernel/fd_object.rs` checks the materialized fd view, explicit GPIO route, and payload; `src/machine/rp2040/timer.rs` owns TIMER0 top-half/raw readiness; `src/kernel/resolver.rs` admits each timeout as `TimerSleepDone`; UART is a separate local device proof and fail-diagnostic path, not the Baker success criterion |
-| Baker ChoreoFS LED open | `src/choreography/local.rs::baker_led_choreofs_blink_roles` | `apps/wasip1/wasip1-smoke-apps/src/bin/wasip1-led-choreofs-open.rs` is an ordinary Rust `fn main` `wasm32-wasip1` app that calls `path_open("/device/led/green")`, `path_open("/device/led/orange")`, `path_open("/device/led/red")`, then `fd_write("1"/"0")` and `poll_oneoff`; `src/projects/baker_link_led/main.rs` drives every `path_open` as `MemBorrowRead -> PathOpen -> PathOpened -> MemRelease` before the fd_write loop | `src/machine/rp2040/baker_link.rs` maps ChoreoFS `GpioDevice` objects into the explicit Baker GPIO route, not a generic object route; bad `/not/allowed`, `fd_write("on")`, and `fd_write` to a non-GPIO ChoreoFS object are hardware-verified fail-closed patterns |
+| Baker ChoreoFS LED open | `src/choreography/local.rs::baker_led_choreofs_blink_roles` | `apps/wasip1/wasip1-smoke-apps/src/bin/wasip1-led-choreofs-open.rs` is an ordinary Rust `fn main` `wasm32-wasip1` app that calls preopen-relative `path_open("device/led/green")`, `path_open("device/led/orange")`, `path_open("device/led/red")`, then `fd_write("1"/"0")` and `poll_oneoff`; `src/projects/baker_link_led/main.rs` drives every `path_open` as `MemBorrowRead -> PathOpen -> PathOpened -> MemRelease` before the fd_write loop | `src/machine/rp2040/baker_link.rs` maps ChoreoFS `GpioDevice` objects into the explicit Baker GPIO route, not a generic object route; bad `not/allowed`, `fd_write("on")`, and `fd_write` to a non-GPIO ChoreoFS object are hardware-verified fail-closed patterns |
 | WASI memory grow | `src/choreography/local.rs::memory_grow_stdout_roles` | `tests/host_wasip1_artifacts.rs` drives `MemFence(MemoryGrow)`, rejects the old lease, then borrows again under the new epoch | `src/kernel/wasi.rs::MemoryLeaseTable` invalidates outstanding leases and rejects stale epochs |
 | Ordinary std core coverage | no new choreography | `tests/host_wasip1_artifacts.rs::rust_built_ordinary_std_core_coverage_runs_on_host_full_profile` runs the Rust std artifact through `CoreWasip1HostRunner` | core Wasm handles control/result values, bulk memory, table/ref, floats, and `memory.grow`; unsupported syscalls remain typed rejects |
 | Ordinary std ChoreoFS read | no new choreography | `tests/host_wasip1_artifacts.rs::rust_built_std_choreofs_app_uses_resource_store_through_host_full_runner` runs `File::open` / `Read` from a Rust std app through `path_open` and `fd_read` | `src/kernel/choreofs.rs` is the bounded resource store; the app never reaches host filesystem authority |
@@ -786,9 +791,9 @@ The Baker ChoreoFS hardware proof embeds
 `wasm32-wasip1` app whose first actions are:
 
 ```text
-path_open(9, "/device/led/green")  -> ChoreoFS GpioDevice -> fd 3
-path_open(9, "/device/led/orange") -> ChoreoFS GpioDevice -> fd 4
-path_open(9, "/device/led/red")    -> ChoreoFS GpioDevice -> fd 5
+path_open(9, "device/led/green")  -> ChoreoFS GpioDevice -> fd 3
+path_open(9, "device/led/orange") -> ChoreoFS GpioDevice -> fd 4
+path_open(9, "device/led/red")    -> ChoreoFS GpioDevice -> fd 5
 fd_write(fd=3, "1")                -> Kernel -> GPIO -> GP22
 poll_oneoff(...)                   -> Timer IRQ -> resolver -> PollReady
 ```
@@ -801,9 +806,9 @@ traffic light. The bad ChoreoFS hardware patterns are:
 
 | Pattern | Expected result |
 | --- | --- |
-| `choreofs-bad-path` | `/not/allowed` rejects at ChoreoFS lookup, `stage=0x4849004b` |
+| `choreofs-bad-path` | `not/allowed` rejects at ChoreoFS lookup, `stage=0x4849004b` |
 | `choreofs-bad-payload` | `fd_write("on")` reaches the LED object route and rejects at payload policy, `stage=0x4849004c` |
-| `choreofs-wrong-object` | `/device/not-gpio` can mint an fd, but `fd_write("1")` rejects because the object is not GPIO, `stage=0x4849004d` |
+| `choreofs-wrong-object` | `device/not-gpio` can mint an fd, but `fd_write("1")` rejects because the object is not GPIO, `stage=0x4849004d` |
 
 The app-owned behavior proof swaps only the WASI guest artifact. The same
 `baker_led_blink_roles()` choreography, same fd view, same memory lease path,

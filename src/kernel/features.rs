@@ -67,14 +67,259 @@ pub enum Wasip1ImportEffectiveDisposition {
     UnsupportedByProfile,
 }
 
+pub const WASIP1_PREVIEW1_MODULE: &str = "wasi_snapshot_preview1";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Wasip1ImportName {
+    ArgsGet,
+    ArgsSizesGet,
+    ClockResGet,
+    ClockTimeGet,
+    EnvironGet,
+    EnvironSizesGet,
+    FdAdvise,
+    FdAllocate,
+    FdClose,
+    FdDatasync,
+    FdFdstatGet,
+    FdFdstatSetFlags,
+    FdFdstatSetRights,
+    FdFilestatGet,
+    FdFilestatSetSize,
+    FdFilestatSetTimes,
+    FdPread,
+    FdPrestatDirName,
+    FdPrestatGet,
+    FdPwrite,
+    FdRead,
+    FdReaddir,
+    FdRenumber,
+    FdSeek,
+    FdSync,
+    FdTell,
+    FdWrite,
+    PathCreateDirectory,
+    PathFilestatGet,
+    PathFilestatSetTimes,
+    PathLink,
+    PathOpen,
+    PathReadlink,
+    PathRemoveDirectory,
+    PathRename,
+    PathSymlink,
+    PathUnlinkFile,
+    PollOneoff,
+    ProcExit,
+    ProcRaise,
+    RandomGet,
+    SchedYield,
+    SockAccept,
+    SockRecv,
+    SockSend,
+    SockShutdown,
+}
+
+impl Wasip1ImportName {
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::ArgsGet => "args_get",
+            Self::ArgsSizesGet => "args_sizes_get",
+            Self::ClockResGet => "clock_res_get",
+            Self::ClockTimeGet => "clock_time_get",
+            Self::EnvironGet => "environ_get",
+            Self::EnvironSizesGet => "environ_sizes_get",
+            Self::FdAdvise => "fd_advise",
+            Self::FdAllocate => "fd_allocate",
+            Self::FdClose => "fd_close",
+            Self::FdDatasync => "fd_datasync",
+            Self::FdFdstatGet => "fd_fdstat_get",
+            Self::FdFdstatSetFlags => "fd_fdstat_set_flags",
+            Self::FdFdstatSetRights => "fd_fdstat_set_rights",
+            Self::FdFilestatGet => "fd_filestat_get",
+            Self::FdFilestatSetSize => "fd_filestat_set_size",
+            Self::FdFilestatSetTimes => "fd_filestat_set_times",
+            Self::FdPread => "fd_pread",
+            Self::FdPrestatDirName => "fd_prestat_dir_name",
+            Self::FdPrestatGet => "fd_prestat_get",
+            Self::FdPwrite => "fd_pwrite",
+            Self::FdRead => "fd_read",
+            Self::FdReaddir => "fd_readdir",
+            Self::FdRenumber => "fd_renumber",
+            Self::FdSeek => "fd_seek",
+            Self::FdSync => "fd_sync",
+            Self::FdTell => "fd_tell",
+            Self::FdWrite => "fd_write",
+            Self::PathCreateDirectory => "path_create_directory",
+            Self::PathFilestatGet => "path_filestat_get",
+            Self::PathFilestatSetTimes => "path_filestat_set_times",
+            Self::PathLink => "path_link",
+            Self::PathOpen => "path_open",
+            Self::PathReadlink => "path_readlink",
+            Self::PathRemoveDirectory => "path_remove_directory",
+            Self::PathRename => "path_rename",
+            Self::PathSymlink => "path_symlink",
+            Self::PathUnlinkFile => "path_unlink_file",
+            Self::PollOneoff => "poll_oneoff",
+            Self::ProcExit => "proc_exit",
+            Self::ProcRaise => "proc_raise",
+            Self::RandomGet => "random_get",
+            Self::SchedYield => "sched_yield",
+            Self::SockAccept => "sock_accept",
+            Self::SockRecv => "sock_recv",
+            Self::SockSend => "sock_send",
+            Self::SockShutdown => "sock_shutdown",
+        }
+    }
+
+    pub const fn syscall(self) -> Wasip1Syscall {
+        match self {
+            Self::ArgsGet | Self::ArgsSizesGet | Self::EnvironGet | Self::EnvironSizesGet => {
+                Wasip1Syscall::ArgsEnv
+            }
+            Self::ClockResGet => Wasip1Syscall::ClockResGet,
+            Self::ClockTimeGet => Wasip1Syscall::ClockTimeGet,
+            Self::FdClose => Wasip1Syscall::FdClose,
+            Self::FdFdstatGet => Wasip1Syscall::FdFdstatGet,
+            Self::FdRead => Wasip1Syscall::FdRead,
+            Self::FdWrite => Wasip1Syscall::FdWrite,
+            Self::FdPrestatGet
+            | Self::FdPrestatDirName
+            | Self::FdFilestatGet
+            | Self::FdReaddir
+            | Self::PathCreateDirectory
+            | Self::PathFilestatGet
+            | Self::PathOpen
+            | Self::PathReadlink
+            | Self::PathRemoveDirectory
+            | Self::PathRename
+            | Self::PathUnlinkFile => Wasip1Syscall::PathMinimal,
+            Self::FdAdvise
+            | Self::FdAllocate
+            | Self::FdDatasync
+            | Self::FdFdstatSetFlags
+            | Self::FdFdstatSetRights
+            | Self::FdFilestatSetSize
+            | Self::FdFilestatSetTimes
+            | Self::FdPread
+            | Self::FdPwrite
+            | Self::FdRenumber
+            | Self::FdSeek
+            | Self::FdSync
+            | Self::FdTell
+            | Self::PathFilestatSetTimes
+            | Self::PathLink
+            | Self::PathSymlink => Wasip1Syscall::PathFull,
+            Self::PollOneoff => Wasip1Syscall::PollOneoff,
+            Self::ProcExit => Wasip1Syscall::ProcExit,
+            Self::ProcRaise => Wasip1Syscall::ProcRaise,
+            Self::RandomGet => Wasip1Syscall::RandomGet,
+            Self::SchedYield => Wasip1Syscall::SchedYield,
+            Self::SockAccept | Self::SockRecv | Self::SockSend | Self::SockShutdown => {
+                Wasip1Syscall::NetworkObject
+            }
+        }
+    }
+
+    pub const fn disposition(self) -> Wasip1ImportDisposition {
+        match self {
+            Self::FdAdvise
+            | Self::FdAllocate
+            | Self::FdDatasync
+            | Self::FdFdstatSetFlags
+            | Self::FdFdstatSetRights
+            | Self::FdFilestatSetSize
+            | Self::FdFilestatSetTimes
+            | Self::FdPwrite
+            | Self::FdRenumber
+            | Self::FdSync
+            | Self::PathCreateDirectory
+            | Self::PathFilestatSetTimes
+            | Self::PathLink
+            | Self::PathReadlink
+            | Self::PathRemoveDirectory
+            | Self::PathRename
+            | Self::PathSymlink
+            | Self::PathUnlinkFile => Wasip1ImportDisposition::TypedEnosys,
+            Self::ProcRaise | Self::SockAccept => Wasip1ImportDisposition::TypedReject,
+            _ => Wasip1ImportDisposition::Supported,
+        }
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        WASIP1_PREVIEW1_IMPORTS
+            .iter()
+            .copied()
+            .find(|import| import.name().as_bytes() == bytes)
+    }
+}
+
+pub const WASIP1_PREVIEW1_IMPORTS: [Wasip1ImportName; 46] = [
+    Wasip1ImportName::ArgsGet,
+    Wasip1ImportName::ArgsSizesGet,
+    Wasip1ImportName::ClockResGet,
+    Wasip1ImportName::ClockTimeGet,
+    Wasip1ImportName::EnvironGet,
+    Wasip1ImportName::EnvironSizesGet,
+    Wasip1ImportName::FdAdvise,
+    Wasip1ImportName::FdAllocate,
+    Wasip1ImportName::FdClose,
+    Wasip1ImportName::FdDatasync,
+    Wasip1ImportName::FdFdstatGet,
+    Wasip1ImportName::FdFdstatSetFlags,
+    Wasip1ImportName::FdFdstatSetRights,
+    Wasip1ImportName::FdFilestatGet,
+    Wasip1ImportName::FdFilestatSetSize,
+    Wasip1ImportName::FdFilestatSetTimes,
+    Wasip1ImportName::FdPread,
+    Wasip1ImportName::FdPrestatGet,
+    Wasip1ImportName::FdPrestatDirName,
+    Wasip1ImportName::FdPwrite,
+    Wasip1ImportName::FdRead,
+    Wasip1ImportName::FdReaddir,
+    Wasip1ImportName::FdRenumber,
+    Wasip1ImportName::FdSeek,
+    Wasip1ImportName::FdSync,
+    Wasip1ImportName::FdTell,
+    Wasip1ImportName::FdWrite,
+    Wasip1ImportName::PathCreateDirectory,
+    Wasip1ImportName::PathFilestatGet,
+    Wasip1ImportName::PathFilestatSetTimes,
+    Wasip1ImportName::PathLink,
+    Wasip1ImportName::PathOpen,
+    Wasip1ImportName::PathReadlink,
+    Wasip1ImportName::PathRemoveDirectory,
+    Wasip1ImportName::PathRename,
+    Wasip1ImportName::PathSymlink,
+    Wasip1ImportName::PathUnlinkFile,
+    Wasip1ImportName::PollOneoff,
+    Wasip1ImportName::ProcExit,
+    Wasip1ImportName::ProcRaise,
+    Wasip1ImportName::RandomGet,
+    Wasip1ImportName::SchedYield,
+    Wasip1ImportName::SockAccept,
+    Wasip1ImportName::SockRecv,
+    Wasip1ImportName::SockSend,
+    Wasip1ImportName::SockShutdown,
+];
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Wasip1ImportCoverage {
+    pub kind: Wasip1ImportName,
     pub import: &'static str,
     pub syscall: Wasip1Syscall,
     pub disposition: Wasip1ImportDisposition,
 }
 
 impl Wasip1ImportCoverage {
+    pub const fn from_import(kind: Wasip1ImportName) -> Self {
+        Self {
+            kind,
+            import: kind.name(),
+            syscall: kind.syscall(),
+            disposition: kind.disposition(),
+        }
+    }
+
     pub const fn effective(self, handlers: Wasip1HandlerSet) -> Wasip1ImportEffectiveDisposition {
         if !handlers.supports(self.syscall) {
             return Wasip1ImportEffectiveDisposition::UnsupportedByProfile;
@@ -88,236 +333,52 @@ impl Wasip1ImportCoverage {
 }
 
 pub const WASIP1_PREVIEW1_IMPORT_COVERAGE: [Wasip1ImportCoverage; 46] = [
-    Wasip1ImportCoverage {
-        import: "args_get",
-        syscall: Wasip1Syscall::ArgsEnv,
-        disposition: Wasip1ImportDisposition::Supported,
-    },
-    Wasip1ImportCoverage {
-        import: "args_sizes_get",
-        syscall: Wasip1Syscall::ArgsEnv,
-        disposition: Wasip1ImportDisposition::Supported,
-    },
-    Wasip1ImportCoverage {
-        import: "clock_res_get",
-        syscall: Wasip1Syscall::ClockResGet,
-        disposition: Wasip1ImportDisposition::Supported,
-    },
-    Wasip1ImportCoverage {
-        import: "clock_time_get",
-        syscall: Wasip1Syscall::ClockTimeGet,
-        disposition: Wasip1ImportDisposition::Supported,
-    },
-    Wasip1ImportCoverage {
-        import: "environ_get",
-        syscall: Wasip1Syscall::ArgsEnv,
-        disposition: Wasip1ImportDisposition::Supported,
-    },
-    Wasip1ImportCoverage {
-        import: "environ_sizes_get",
-        syscall: Wasip1Syscall::ArgsEnv,
-        disposition: Wasip1ImportDisposition::Supported,
-    },
-    Wasip1ImportCoverage {
-        import: "fd_advise",
-        syscall: Wasip1Syscall::PathFull,
-        disposition: Wasip1ImportDisposition::TypedEnosys,
-    },
-    Wasip1ImportCoverage {
-        import: "fd_allocate",
-        syscall: Wasip1Syscall::PathFull,
-        disposition: Wasip1ImportDisposition::TypedEnosys,
-    },
-    Wasip1ImportCoverage {
-        import: "fd_close",
-        syscall: Wasip1Syscall::FdClose,
-        disposition: Wasip1ImportDisposition::Supported,
-    },
-    Wasip1ImportCoverage {
-        import: "fd_datasync",
-        syscall: Wasip1Syscall::PathFull,
-        disposition: Wasip1ImportDisposition::TypedEnosys,
-    },
-    Wasip1ImportCoverage {
-        import: "fd_fdstat_get",
-        syscall: Wasip1Syscall::FdFdstatGet,
-        disposition: Wasip1ImportDisposition::Supported,
-    },
-    Wasip1ImportCoverage {
-        import: "fd_fdstat_set_flags",
-        syscall: Wasip1Syscall::PathFull,
-        disposition: Wasip1ImportDisposition::TypedEnosys,
-    },
-    Wasip1ImportCoverage {
-        import: "fd_fdstat_set_rights",
-        syscall: Wasip1Syscall::PathFull,
-        disposition: Wasip1ImportDisposition::TypedEnosys,
-    },
-    Wasip1ImportCoverage {
-        import: "fd_filestat_get",
-        syscall: Wasip1Syscall::PathMinimal,
-        disposition: Wasip1ImportDisposition::Supported,
-    },
-    Wasip1ImportCoverage {
-        import: "fd_filestat_set_size",
-        syscall: Wasip1Syscall::PathFull,
-        disposition: Wasip1ImportDisposition::TypedEnosys,
-    },
-    Wasip1ImportCoverage {
-        import: "fd_filestat_set_times",
-        syscall: Wasip1Syscall::PathFull,
-        disposition: Wasip1ImportDisposition::TypedEnosys,
-    },
-    Wasip1ImportCoverage {
-        import: "fd_pread",
-        syscall: Wasip1Syscall::PathFull,
-        disposition: Wasip1ImportDisposition::Supported,
-    },
-    Wasip1ImportCoverage {
-        import: "fd_prestat_get",
-        syscall: Wasip1Syscall::PathMinimal,
-        disposition: Wasip1ImportDisposition::Supported,
-    },
-    Wasip1ImportCoverage {
-        import: "fd_prestat_dir_name",
-        syscall: Wasip1Syscall::PathMinimal,
-        disposition: Wasip1ImportDisposition::Supported,
-    },
-    Wasip1ImportCoverage {
-        import: "fd_pwrite",
-        syscall: Wasip1Syscall::PathFull,
-        disposition: Wasip1ImportDisposition::TypedEnosys,
-    },
-    Wasip1ImportCoverage {
-        import: "fd_read",
-        syscall: Wasip1Syscall::FdRead,
-        disposition: Wasip1ImportDisposition::Supported,
-    },
-    Wasip1ImportCoverage {
-        import: "fd_readdir",
-        syscall: Wasip1Syscall::PathMinimal,
-        disposition: Wasip1ImportDisposition::Supported,
-    },
-    Wasip1ImportCoverage {
-        import: "fd_renumber",
-        syscall: Wasip1Syscall::PathFull,
-        disposition: Wasip1ImportDisposition::TypedEnosys,
-    },
-    Wasip1ImportCoverage {
-        import: "fd_seek",
-        syscall: Wasip1Syscall::PathFull,
-        disposition: Wasip1ImportDisposition::Supported,
-    },
-    Wasip1ImportCoverage {
-        import: "fd_sync",
-        syscall: Wasip1Syscall::PathFull,
-        disposition: Wasip1ImportDisposition::TypedEnosys,
-    },
-    Wasip1ImportCoverage {
-        import: "fd_tell",
-        syscall: Wasip1Syscall::PathFull,
-        disposition: Wasip1ImportDisposition::Supported,
-    },
-    Wasip1ImportCoverage {
-        import: "fd_write",
-        syscall: Wasip1Syscall::FdWrite,
-        disposition: Wasip1ImportDisposition::Supported,
-    },
-    Wasip1ImportCoverage {
-        import: "path_create_directory",
-        syscall: Wasip1Syscall::PathMinimal,
-        disposition: Wasip1ImportDisposition::TypedEnosys,
-    },
-    Wasip1ImportCoverage {
-        import: "path_filestat_get",
-        syscall: Wasip1Syscall::PathMinimal,
-        disposition: Wasip1ImportDisposition::Supported,
-    },
-    Wasip1ImportCoverage {
-        import: "path_filestat_set_times",
-        syscall: Wasip1Syscall::PathFull,
-        disposition: Wasip1ImportDisposition::TypedEnosys,
-    },
-    Wasip1ImportCoverage {
-        import: "path_link",
-        syscall: Wasip1Syscall::PathFull,
-        disposition: Wasip1ImportDisposition::TypedEnosys,
-    },
-    Wasip1ImportCoverage {
-        import: "path_open",
-        syscall: Wasip1Syscall::PathMinimal,
-        disposition: Wasip1ImportDisposition::Supported,
-    },
-    Wasip1ImportCoverage {
-        import: "path_readlink",
-        syscall: Wasip1Syscall::PathMinimal,
-        disposition: Wasip1ImportDisposition::TypedEnosys,
-    },
-    Wasip1ImportCoverage {
-        import: "path_remove_directory",
-        syscall: Wasip1Syscall::PathMinimal,
-        disposition: Wasip1ImportDisposition::TypedEnosys,
-    },
-    Wasip1ImportCoverage {
-        import: "path_rename",
-        syscall: Wasip1Syscall::PathMinimal,
-        disposition: Wasip1ImportDisposition::TypedEnosys,
-    },
-    Wasip1ImportCoverage {
-        import: "path_symlink",
-        syscall: Wasip1Syscall::PathFull,
-        disposition: Wasip1ImportDisposition::TypedEnosys,
-    },
-    Wasip1ImportCoverage {
-        import: "path_unlink_file",
-        syscall: Wasip1Syscall::PathMinimal,
-        disposition: Wasip1ImportDisposition::TypedEnosys,
-    },
-    Wasip1ImportCoverage {
-        import: "poll_oneoff",
-        syscall: Wasip1Syscall::PollOneoff,
-        disposition: Wasip1ImportDisposition::Supported,
-    },
-    Wasip1ImportCoverage {
-        import: "proc_exit",
-        syscall: Wasip1Syscall::ProcExit,
-        disposition: Wasip1ImportDisposition::Supported,
-    },
-    Wasip1ImportCoverage {
-        import: "proc_raise",
-        syscall: Wasip1Syscall::ProcRaise,
-        disposition: Wasip1ImportDisposition::TypedReject,
-    },
-    Wasip1ImportCoverage {
-        import: "random_get",
-        syscall: Wasip1Syscall::RandomGet,
-        disposition: Wasip1ImportDisposition::Supported,
-    },
-    Wasip1ImportCoverage {
-        import: "sched_yield",
-        syscall: Wasip1Syscall::SchedYield,
-        disposition: Wasip1ImportDisposition::Supported,
-    },
-    Wasip1ImportCoverage {
-        import: "sock_accept",
-        syscall: Wasip1Syscall::NetworkObject,
-        disposition: Wasip1ImportDisposition::TypedReject,
-    },
-    Wasip1ImportCoverage {
-        import: "sock_recv",
-        syscall: Wasip1Syscall::NetworkObject,
-        disposition: Wasip1ImportDisposition::Supported,
-    },
-    Wasip1ImportCoverage {
-        import: "sock_send",
-        syscall: Wasip1Syscall::NetworkObject,
-        disposition: Wasip1ImportDisposition::Supported,
-    },
-    Wasip1ImportCoverage {
-        import: "sock_shutdown",
-        syscall: Wasip1Syscall::NetworkObject,
-        disposition: Wasip1ImportDisposition::Supported,
-    },
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::ArgsGet),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::ArgsSizesGet),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::ClockResGet),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::ClockTimeGet),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::EnvironGet),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::EnvironSizesGet),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::FdAdvise),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::FdAllocate),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::FdClose),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::FdDatasync),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::FdFdstatGet),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::FdFdstatSetFlags),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::FdFdstatSetRights),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::FdFilestatGet),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::FdFilestatSetSize),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::FdFilestatSetTimes),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::FdPread),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::FdPrestatGet),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::FdPrestatDirName),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::FdPwrite),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::FdRead),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::FdReaddir),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::FdRenumber),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::FdSeek),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::FdSync),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::FdTell),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::FdWrite),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::PathCreateDirectory),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::PathFilestatGet),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::PathFilestatSetTimes),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::PathLink),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::PathOpen),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::PathReadlink),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::PathRemoveDirectory),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::PathRename),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::PathSymlink),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::PathUnlinkFile),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::PollOneoff),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::ProcExit),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::ProcRaise),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::RandomGet),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::SchedYield),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::SockAccept),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::SockRecv),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::SockSend),
+    Wasip1ImportCoverage::from_import(Wasip1ImportName::SockShutdown),
 ];
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

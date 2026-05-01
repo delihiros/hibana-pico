@@ -36,9 +36,9 @@ unsafe extern "C" {
 }
 
 fn main() {
-    let green = open_led(b"/device/led/green");
-    let orange = open_led(b"/device/led/orange");
-    let red = open_led(b"/device/led/red");
+    let green = open_led(b"device/led/green");
+    let orange = open_led(b"device/led/orange");
+    let red = open_led(b"device/led/red");
 
     let plan = [
         (green, b'1', 180),

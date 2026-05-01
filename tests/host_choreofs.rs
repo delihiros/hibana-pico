@@ -3,7 +3,7 @@ use hibana_pico::{
     kernel::{
         choreofs::{
             ChoreoFsError, ChoreoFsObjectKind, ChoreoFsStore, WASIP1_RIGHT_FD_READ,
-            WASIP1_RIGHT_FD_READDIR, WASIP1_RIGHT_FD_WRITE,
+            WASIP1_RIGHT_FD_READDIR, WASIP1_RIGHT_FD_WRITE, pico_rights_from_wasip1_base,
         },
         guest_ledger::{
             GuestFdKind, GuestLedger, GuestLedgerError, GuestQuotaLimits, WasiErrnoMap, WasiProfile,
@@ -365,6 +365,12 @@ fn choreofs_directory_view_and_path_normalization_fail_closed() {
     assert_eq!(
         store.open(b"/app/config", PicoFdRights::Read),
         Err(ChoreoFsError::AbsolutePath)
+    );
+    assert_eq!(pico_rights_from_wasip1_base(0), PicoFdRights::None);
+    assert_eq!(
+        store.open_wasip1_path_with_ledger(&mut ledger, 3, 6, b"app/config", 0),
+        Err(ChoreoFsError::PermissionDenied),
+        "empty WASI rights must not silently become read authority"
     );
     assert_eq!(
         store.open_with_ledger(&mut ledger, 3, 6, b"missing", PicoFdRights::Read),

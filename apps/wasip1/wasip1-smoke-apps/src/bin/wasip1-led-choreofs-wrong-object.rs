@@ -25,9 +25,9 @@ unsafe extern "C" {
 }
 
 fn main() {
-    let _orange = open_path(b"/device/led/orange");
-    let _red = open_path(b"/device/led/red");
-    let fd = open_path(b"/device/not-gpio");
+    let _orange = open_path(b"device/led/orange");
+    let _red = open_path(b"device/led/red");
+    let fd = open_path(b"device/not-gpio");
     let one = b"1";
     let iov = [Ciovec {
         buf: one.as_ptr(),
@@ -35,7 +35,11 @@ fn main() {
     }];
     let mut written = 0usize;
     let errno = unsafe { fd_write(fd, iov.as_ptr(), iov.len(), &mut written) };
-    assert_eq!(errno, ERRNO_SUCCESS, "wrong object fd_write must fail closed");
+    assert_eq!(
+        errno,
+        ERRNO_SUCCESS,
+        "bad guest expects non-GPIO object fd_write success; kernel must fail closed before this point"
+    );
 }
 
 fn open_path(path: &[u8]) -> u32 {

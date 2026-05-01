@@ -3,7 +3,7 @@ use crate::{
         BudgetExpired, BudgetRun, EngineReq, EngineRet, FdRead, FdRequest, FdWrite, GpioSet,
         TimerSleepUntil,
     },
-    kernel::features::{Wasip1HandlerSet, Wasip1Syscall},
+    kernel::features::{WASIP1_PREVIEW1_MODULE, Wasip1HandlerSet, Wasip1ImportName, Wasip1Syscall},
 };
 
 const WASM_MAGIC: [u8; 4] = [0x00, 0x61, 0x73, 0x6d];
@@ -222,53 +222,61 @@ const MAX_IMPORT_COUNT: u32 = 3;
 
 const SECTION_MEMORY: u8 = 5;
 const SECTION_GLOBAL: u8 = 6;
-const WASIP1_IMPORT_MODULE: &[u8] = b"wasi_snapshot_preview1";
-const WASIP1_IMPORT_FD_WRITE: &[u8] = b"fd_write";
-const WASIP1_IMPORT_FD_READ: &[u8] = b"fd_read";
-const WASIP1_IMPORT_FD_FDSTAT_GET: &[u8] = b"fd_fdstat_get";
-const WASIP1_IMPORT_FD_CLOSE: &[u8] = b"fd_close";
-const WASIP1_IMPORT_FD_PRESTAT_GET: &[u8] = b"fd_prestat_get";
-const WASIP1_IMPORT_FD_PRESTAT_DIR_NAME: &[u8] = b"fd_prestat_dir_name";
-const WASIP1_IMPORT_FD_FILESTAT_GET: &[u8] = b"fd_filestat_get";
-const WASIP1_IMPORT_FD_READDIR: &[u8] = b"fd_readdir";
-const WASIP1_IMPORT_FD_ADVISE: &[u8] = b"fd_advise";
-const WASIP1_IMPORT_FD_ALLOCATE: &[u8] = b"fd_allocate";
-const WASIP1_IMPORT_FD_DATASYNC: &[u8] = b"fd_datasync";
-const WASIP1_IMPORT_FD_FDSTAT_SET_FLAGS: &[u8] = b"fd_fdstat_set_flags";
-const WASIP1_IMPORT_FD_FDSTAT_SET_RIGHTS: &[u8] = b"fd_fdstat_set_rights";
-const WASIP1_IMPORT_FD_FILESTAT_SET_SIZE: &[u8] = b"fd_filestat_set_size";
-const WASIP1_IMPORT_FD_FILESTAT_SET_TIMES: &[u8] = b"fd_filestat_set_times";
-const WASIP1_IMPORT_FD_PREAD: &[u8] = b"fd_pread";
-const WASIP1_IMPORT_FD_PWRITE: &[u8] = b"fd_pwrite";
-const WASIP1_IMPORT_FD_RENUMBER: &[u8] = b"fd_renumber";
-const WASIP1_IMPORT_FD_SEEK: &[u8] = b"fd_seek";
-const WASIP1_IMPORT_FD_SYNC: &[u8] = b"fd_sync";
-const WASIP1_IMPORT_FD_TELL: &[u8] = b"fd_tell";
-const WASIP1_IMPORT_CLOCK_RES_GET: &[u8] = b"clock_res_get";
-const WASIP1_IMPORT_CLOCK_TIME_GET: &[u8] = b"clock_time_get";
-const WASIP1_IMPORT_POLL_ONEOFF: &[u8] = b"poll_oneoff";
-const WASIP1_IMPORT_SCHED_YIELD: &[u8] = b"sched_yield";
-const WASIP1_IMPORT_PATH_OPEN: &[u8] = b"path_open";
-const WASIP1_IMPORT_PATH_FILESTAT_GET: &[u8] = b"path_filestat_get";
-const WASIP1_IMPORT_PATH_READLINK: &[u8] = b"path_readlink";
-const WASIP1_IMPORT_PATH_CREATE_DIRECTORY: &[u8] = b"path_create_directory";
-const WASIP1_IMPORT_PATH_REMOVE_DIRECTORY: &[u8] = b"path_remove_directory";
-const WASIP1_IMPORT_PATH_UNLINK_FILE: &[u8] = b"path_unlink_file";
-const WASIP1_IMPORT_PATH_RENAME: &[u8] = b"path_rename";
-const WASIP1_IMPORT_PATH_FILESTAT_SET_TIMES: &[u8] = b"path_filestat_set_times";
-const WASIP1_IMPORT_PATH_LINK: &[u8] = b"path_link";
-const WASIP1_IMPORT_PATH_SYMLINK: &[u8] = b"path_symlink";
-const WASIP1_IMPORT_ARGS_GET: &[u8] = b"args_get";
-const WASIP1_IMPORT_ARGS_SIZES_GET: &[u8] = b"args_sizes_get";
-const WASIP1_IMPORT_ENVIRON_GET: &[u8] = b"environ_get";
-const WASIP1_IMPORT_ENVIRON_SIZES_GET: &[u8] = b"environ_sizes_get";
-const WASIP1_IMPORT_RANDOM_GET: &[u8] = b"random_get";
-const WASIP1_IMPORT_PROC_EXIT: &[u8] = b"proc_exit";
-const WASIP1_IMPORT_PROC_RAISE: &[u8] = b"proc_raise";
-const WASIP1_IMPORT_SOCK_ACCEPT: &[u8] = b"sock_accept";
-const WASIP1_IMPORT_SOCK_RECV: &[u8] = b"sock_recv";
-const WASIP1_IMPORT_SOCK_SEND: &[u8] = b"sock_send";
-const WASIP1_IMPORT_SOCK_SHUTDOWN: &[u8] = b"sock_shutdown";
+const WASIP1_IMPORT_MODULE: &[u8] = WASIP1_PREVIEW1_MODULE.as_bytes();
+const WASIP1_IMPORT_FD_WRITE: &[u8] = Wasip1ImportName::FdWrite.name().as_bytes();
+const WASIP1_IMPORT_FD_READ: &[u8] = Wasip1ImportName::FdRead.name().as_bytes();
+const WASIP1_IMPORT_FD_FDSTAT_GET: &[u8] = Wasip1ImportName::FdFdstatGet.name().as_bytes();
+const WASIP1_IMPORT_FD_CLOSE: &[u8] = Wasip1ImportName::FdClose.name().as_bytes();
+const WASIP1_IMPORT_FD_PRESTAT_GET: &[u8] = Wasip1ImportName::FdPrestatGet.name().as_bytes();
+const WASIP1_IMPORT_FD_PRESTAT_DIR_NAME: &[u8] =
+    Wasip1ImportName::FdPrestatDirName.name().as_bytes();
+const WASIP1_IMPORT_FD_FILESTAT_GET: &[u8] = Wasip1ImportName::FdFilestatGet.name().as_bytes();
+const WASIP1_IMPORT_FD_READDIR: &[u8] = Wasip1ImportName::FdReaddir.name().as_bytes();
+const WASIP1_IMPORT_FD_ADVISE: &[u8] = Wasip1ImportName::FdAdvise.name().as_bytes();
+const WASIP1_IMPORT_FD_ALLOCATE: &[u8] = Wasip1ImportName::FdAllocate.name().as_bytes();
+const WASIP1_IMPORT_FD_DATASYNC: &[u8] = Wasip1ImportName::FdDatasync.name().as_bytes();
+const WASIP1_IMPORT_FD_FDSTAT_SET_FLAGS: &[u8] =
+    Wasip1ImportName::FdFdstatSetFlags.name().as_bytes();
+const WASIP1_IMPORT_FD_FDSTAT_SET_RIGHTS: &[u8] =
+    Wasip1ImportName::FdFdstatSetRights.name().as_bytes();
+const WASIP1_IMPORT_FD_FILESTAT_SET_SIZE: &[u8] =
+    Wasip1ImportName::FdFilestatSetSize.name().as_bytes();
+const WASIP1_IMPORT_FD_FILESTAT_SET_TIMES: &[u8] =
+    Wasip1ImportName::FdFilestatSetTimes.name().as_bytes();
+const WASIP1_IMPORT_FD_PREAD: &[u8] = Wasip1ImportName::FdPread.name().as_bytes();
+const WASIP1_IMPORT_FD_PWRITE: &[u8] = Wasip1ImportName::FdPwrite.name().as_bytes();
+const WASIP1_IMPORT_FD_RENUMBER: &[u8] = Wasip1ImportName::FdRenumber.name().as_bytes();
+const WASIP1_IMPORT_FD_SEEK: &[u8] = Wasip1ImportName::FdSeek.name().as_bytes();
+const WASIP1_IMPORT_FD_SYNC: &[u8] = Wasip1ImportName::FdSync.name().as_bytes();
+const WASIP1_IMPORT_FD_TELL: &[u8] = Wasip1ImportName::FdTell.name().as_bytes();
+const WASIP1_IMPORT_CLOCK_RES_GET: &[u8] = Wasip1ImportName::ClockResGet.name().as_bytes();
+const WASIP1_IMPORT_CLOCK_TIME_GET: &[u8] = Wasip1ImportName::ClockTimeGet.name().as_bytes();
+const WASIP1_IMPORT_POLL_ONEOFF: &[u8] = Wasip1ImportName::PollOneoff.name().as_bytes();
+const WASIP1_IMPORT_SCHED_YIELD: &[u8] = Wasip1ImportName::SchedYield.name().as_bytes();
+const WASIP1_IMPORT_PATH_OPEN: &[u8] = Wasip1ImportName::PathOpen.name().as_bytes();
+const WASIP1_IMPORT_PATH_FILESTAT_GET: &[u8] = Wasip1ImportName::PathFilestatGet.name().as_bytes();
+const WASIP1_IMPORT_PATH_READLINK: &[u8] = Wasip1ImportName::PathReadlink.name().as_bytes();
+const WASIP1_IMPORT_PATH_CREATE_DIRECTORY: &[u8] =
+    Wasip1ImportName::PathCreateDirectory.name().as_bytes();
+const WASIP1_IMPORT_PATH_REMOVE_DIRECTORY: &[u8] =
+    Wasip1ImportName::PathRemoveDirectory.name().as_bytes();
+const WASIP1_IMPORT_PATH_UNLINK_FILE: &[u8] = Wasip1ImportName::PathUnlinkFile.name().as_bytes();
+const WASIP1_IMPORT_PATH_RENAME: &[u8] = Wasip1ImportName::PathRename.name().as_bytes();
+const WASIP1_IMPORT_PATH_FILESTAT_SET_TIMES: &[u8] =
+    Wasip1ImportName::PathFilestatSetTimes.name().as_bytes();
+const WASIP1_IMPORT_PATH_LINK: &[u8] = Wasip1ImportName::PathLink.name().as_bytes();
+const WASIP1_IMPORT_PATH_SYMLINK: &[u8] = Wasip1ImportName::PathSymlink.name().as_bytes();
+const WASIP1_IMPORT_ARGS_GET: &[u8] = Wasip1ImportName::ArgsGet.name().as_bytes();
+const WASIP1_IMPORT_ARGS_SIZES_GET: &[u8] = Wasip1ImportName::ArgsSizesGet.name().as_bytes();
+const WASIP1_IMPORT_ENVIRON_GET: &[u8] = Wasip1ImportName::EnvironGet.name().as_bytes();
+const WASIP1_IMPORT_ENVIRON_SIZES_GET: &[u8] = Wasip1ImportName::EnvironSizesGet.name().as_bytes();
+const WASIP1_IMPORT_RANDOM_GET: &[u8] = Wasip1ImportName::RandomGet.name().as_bytes();
+const WASIP1_IMPORT_PROC_EXIT: &[u8] = Wasip1ImportName::ProcExit.name().as_bytes();
+const WASIP1_IMPORT_PROC_RAISE: &[u8] = Wasip1ImportName::ProcRaise.name().as_bytes();
+const WASIP1_IMPORT_SOCK_ACCEPT: &[u8] = Wasip1ImportName::SockAccept.name().as_bytes();
+const WASIP1_IMPORT_SOCK_RECV: &[u8] = Wasip1ImportName::SockRecv.name().as_bytes();
+const WASIP1_IMPORT_SOCK_SEND: &[u8] = Wasip1ImportName::SockSend.name().as_bytes();
+const WASIP1_IMPORT_SOCK_SHUTDOWN: &[u8] = Wasip1ImportName::SockShutdown.name().as_bytes();
 #[cfg(test)]
 const WASIP1_FD_WRITE_IMPORT_INDEX: u32 = 0;
 #[cfg(test)]

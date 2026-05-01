@@ -18,7 +18,7 @@ unsafe extern "C" {
 }
 
 fn main() {
-    let path = b"/not/allowed";
+    let path = b"not/allowed";
     let mut fd = 0u32;
     let errno = unsafe {
         path_open(
@@ -33,5 +33,9 @@ fn main() {
             &mut fd,
         )
     };
-    assert_eq!(errno, ERRNO_SUCCESS, "forbidden path must fail closed");
+    assert_eq!(
+        errno,
+        ERRNO_SUCCESS,
+        "bad guest expects forbidden path success; kernel must fail closed before this point"
+    );
 }

@@ -135,6 +135,8 @@ for bin_name in "${BINS[@]}"; do
     flash_budget="$BAKER_FLASH_BUDGET"
     static_sram_budget="$BAKER_STATIC_SRAM_BUDGET"
     peak_sram_budget="$BAKER_PEAK_SRAM_BUDGET"
+    symbol_addr "$bin" HIBANA_DEMO_CORE0_STACK_MAX_USED_BYTES >/dev/null
+    symbol_addr "$bin" HIBANA_DEMO_CORE1_STACK_MAX_USED_BYTES >/dev/null
   fi
 
   stack_top_addr="$(symbol_addr "$bin" __stack_top)"

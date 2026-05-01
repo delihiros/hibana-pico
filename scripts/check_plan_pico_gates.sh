@@ -64,6 +64,18 @@ cargo build \
   --release \
   --bin hibana-pico-baker-led-demo \
   --features "profile-rp2040-pico-min embed-wasip1-artifacts"
+for baker_choreofs_feature in \
+  baker-choreofs-demo \
+  baker-choreofs-bad-path-demo \
+  baker-choreofs-bad-payload-demo \
+  baker-choreofs-wrong-object-demo
+do
+  cargo build \
+    --target thumbv6m-none-eabi \
+    --release \
+    --bin hibana-pico-baker-led-demo \
+    --features "profile-rp2040-pico-min embed-wasip1-artifacts ${baker_choreofs_feature}"
+done
 cargo build \
   --target thumbv8m.main-none-eabi \
   --release \

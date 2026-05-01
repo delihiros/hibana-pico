@@ -1,6 +1,7 @@
 use hibana_pico::kernel::features::{
-    FeatureMatrix, WASIP1_PREVIEW1_IMPORT_COVERAGE, Wasip1ControlSubstrate, Wasip1HandlerSet,
-    Wasip1ImportDisposition, Wasip1ImportEffectiveDisposition, Wasip1Syscall, WasmEngineProfile,
+    FeatureMatrix, WASIP1_PREVIEW1_IMPORT_COVERAGE, WASIP1_PREVIEW1_IMPORTS,
+    Wasip1ControlSubstrate, Wasip1HandlerSet, Wasip1ImportDisposition,
+    Wasip1ImportEffectiveDisposition, Wasip1ImportName, Wasip1Syscall, WasmEngineProfile,
 };
 
 fn cargo_toml() -> &'static str {
@@ -69,6 +70,23 @@ fn feature_control_matrix_keeps_pico_small_and_host_full_as_separate_axes() {
 #[test]
 fn wasi_p1_import_coverage_table_is_the_source_of_truth_for_profiles() {
     assert_eq!(WASIP1_PREVIEW1_IMPORT_COVERAGE.len(), 46);
+    assert_eq!(
+        WASIP1_PREVIEW1_IMPORT_COVERAGE.len(),
+        WASIP1_PREVIEW1_IMPORTS.len()
+    );
+    for (coverage, import) in WASIP1_PREVIEW1_IMPORT_COVERAGE
+        .iter()
+        .zip(WASIP1_PREVIEW1_IMPORTS.iter())
+    {
+        assert_eq!(coverage.kind, *import);
+        assert_eq!(coverage.import, import.name());
+        assert_eq!(coverage.syscall, import.syscall());
+        assert_eq!(coverage.disposition, import.disposition());
+    }
+    assert_eq!(
+        Wasip1ImportName::from_bytes(b"fd_write"),
+        Some(Wasip1ImportName::FdWrite)
+    );
 
     for required in [
         "fd_write",
@@ -134,6 +152,25 @@ fn wasi_p1_import_coverage_table_is_the_source_of_truth_for_profiles() {
             .effective(pico),
         Wasip1ImportEffectiveDisposition::UnsupportedByProfile
     );
+}
+
+#[test]
+fn wasi_p1_import_names_are_not_redeclared_as_manual_byte_tables() {
+    for (path, source) in [
+        ("src/kernel/wasi.rs", include_str!("../src/kernel/wasi.rs")),
+        (
+            "src/kernel/engine/wasm.rs",
+            include_str!("../src/kernel/engine/wasm.rs"),
+        ),
+    ] {
+        for import in WASIP1_PREVIEW1_IMPORTS {
+            let forbidden = format!("= b\"{}\"", import.name());
+            assert!(
+                !source.contains(&forbidden),
+                "{path} redeclares WASI P1 import name {forbidden}; use Wasip1ImportName"
+            );
+        }
+    }
 }
 
 #[test]
