@@ -10,6 +10,14 @@ pub struct Datagram {
     fd: u32,
 }
 
+pub struct Stream {
+    fd: u32,
+}
+
+pub struct Listener {
+    fd: u32,
+}
+
 impl Datagram {
     pub const MAX_PAYLOAD: usize = 30;
 
@@ -45,10 +53,74 @@ impl Datagram {
     }
 }
 
+impl Stream {
+    pub const MAX_CHUNK: usize = 30;
+
+    pub fn control() -> Result<Self> {
+        Self::open_endpoint(StreamEndpoint::Control)
+    }
+
+    pub fn write_chunk(&self, bytes: &[u8]) -> Result<usize> {
+        validate_payload_len(bytes.len(), Self::MAX_CHUNK)?;
+        sys::sock_send_once(self.fd, bytes)
+    }
+
+    pub fn read_chunk(&self, out: &mut [u8]) -> Result<usize> {
+        let limit = out.len().min(Self::MAX_CHUNK);
+        sys::sock_recv_checked(self.fd, &mut out[..limit])
+    }
+
+    pub fn shutdown(self) -> Result<()> {
+        sys::sock_shutdown_quiesce(self.fd)
+    }
+
+    fn accepted(fd: u32) -> Self {
+        Self { fd }
+    }
+
+    fn open_endpoint(endpoint: StreamEndpoint) -> Result<Self> {
+        let fd = sys::open_path(
+            choreofs::default_root_fd(),
+            endpoint.path().as_bytes(),
+            sys::FD_READ_RIGHT | sys::FD_WRITE_RIGHT,
+        )?;
+        Ok(Self { fd })
+    }
+}
+
+impl Listener {
+    pub fn control() -> Result<Self> {
+        Self::open_endpoint(ListenerEndpoint::Control)
+    }
+
+    pub fn accept_stream(&self) -> Result<Stream> {
+        Ok(Stream::accepted(sys::sock_accept_stream(self.fd)?))
+    }
+
+    fn open_endpoint(endpoint: ListenerEndpoint) -> Result<Self> {
+        let fd = sys::open_path(
+            choreofs::default_root_fd(),
+            endpoint.path().as_bytes(),
+            sys::FD_READ_RIGHT,
+        )?;
+        Ok(Self { fd })
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum DatagramEndpoint {
     PingPong,
     Gateway,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum StreamEndpoint {
+    Control,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ListenerEndpoint {
+    Control,
 }
 
 impl DatagramEndpoint {
@@ -56,6 +128,22 @@ impl DatagramEndpoint {
         match self {
             Self::PingPong => "network/datagram/ping-pong",
             Self::Gateway => "network/datagram/gateway",
+        }
+    }
+}
+
+impl StreamEndpoint {
+    const fn path(self) -> &'static str {
+        match self {
+            Self::Control => "network/stream/control",
+        }
+    }
+}
+
+impl ListenerEndpoint {
+    const fn path(self) -> &'static str {
+        match self {
+            Self::Control => "network/listener/control",
         }
     }
 }
@@ -94,5 +182,16 @@ mod tests {
                 actual: Datagram::MAX_PAYLOAD + 1,
             })
         );
+    }
+
+    #[test]
+    fn stream_and_listener_endpoint_paths_are_private_choreofs_selectors() {
+        assert_eq!(StreamEndpoint::Control.path(), "network/stream/control");
+        assert_eq!(ListenerEndpoint::Control.path(), "network/listener/control");
+    }
+
+    #[test]
+    fn stream_chunk_limit_matches_current_wasip1_network_chunk() {
+        assert_eq!(Stream::MAX_CHUNK, 30);
     }
 }

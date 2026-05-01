@@ -415,6 +415,19 @@ fn rust_built_wasip1_smoke_artifacts_cover_timer_trap_and_infinite_loop() {
             "ordinary std bad socket app must carry the fail-closed assertion marker"
         );
 
+        let std_stream = artifact("wasip1-std-stream-control");
+        assert!(
+            bytes_contain(&std_stream, b"path_open")
+                && bytes_contain(&std_stream, b"sock_send")
+                && bytes_contain(&std_stream, b"sock_recv")
+                && bytes_contain(&std_stream, b"sock_shutdown"),
+            "ordinary std stream app must open a ChoreoFS NetworkStream and exercise WASI P1 sock imports"
+        );
+        assert!(
+            bytes_contain(&std_stream, b"hibana network stream control ping pong"),
+            "ordinary std stream app must carry the stdout marker"
+        );
+
         let memory_grow_ok = artifact("wasip1-memory-grow-ok");
         assert!(
             bytes_contain(&memory_grow_ok, b"hibana wasip1 memory grow ok"),
@@ -764,7 +777,7 @@ fn rust_built_std_sock_app_uses_network_object_without_p2() {
     assert_eq!(report.choreofs_open_count, 1);
     assert_eq!(runner.network_tx().len(), 1);
     assert_eq!(runner.network_tx()[0].0, 4);
-    assert_eq!(runner.network_tx()[0].1, vec![b'x'; 30]);
+    assert_eq!(runner.network_tx()[0].1, b"ping");
     assert_eq!(report.network_send_count, 1);
     assert_eq!(report.network_recv_count, 1);
     let sent_write = report
@@ -776,7 +789,7 @@ fn rust_built_std_sock_app_uses_network_object_without_p2() {
         })
         .expect("sock_send must enter the typed fd_write syscall stream");
     assert_eq!(sent_write.fd(), 4);
-    assert_eq!(sent_write.as_bytes(), &[b'x'; 30]);
+    assert_eq!(sent_write.as_bytes(), b"ping");
     assert!(
         report
             .engine_trace
@@ -793,9 +806,12 @@ fn rust_built_std_sock_app_uses_network_object_without_p2() {
 fn rust_built_std_sock_accept_app_mints_network_object_without_socket_authority() {
     let artifact = artifact("wasip1-std-sock-accept-send-recv");
     let mut runner = CoreWasip1HostRunner::new(&artifact).expect("create host/full accept runner");
-    runner.cap_grant_listener(31).expect("grant listener fd");
-    runner.enqueue_datagram_accept(31, 32);
-    runner.enqueue_network_rx(32, b"pong");
+    runner
+        .fs_mut()
+        .install_network_listener(b"network/listener/control")
+        .expect("install control NetworkListener");
+    runner.enqueue_stream_accept(4, 5);
+    runner.enqueue_network_rx(5, b"pong");
 
     let report = runner
         .run_until_exit(768)
@@ -805,19 +821,22 @@ fn rust_built_std_sock_accept_app_mints_network_object_without_socket_authority(
         bytes_contain(&report.stdout, b"hibana listener accept fd ping pong"),
         "listener app must report success through stdout"
     );
+    assert_eq!(report.choreofs_open_count, 1);
     assert_eq!(runner.network_tx().len(), 1);
-    assert_eq!(runner.network_tx()[0].0, 32);
+    assert_eq!(runner.network_tx()[0].0, 5);
     assert_eq!(runner.network_tx()[0].1, b"ping");
     assert_eq!(report.network_accept_count, 1);
     assert!(report.network_send_count >= 1);
     assert!(report.network_recv_count >= 1);
-    assert!(
-        report
-            .engine_trace
-            .iter()
-            .any(|request| matches!(request, EngineReq::FdWrite(_))),
-        "accepted sock_send must enter typed fd_write stream"
-    );
+    let accepted_write = report
+        .engine_trace
+        .iter()
+        .find_map(|request| match request {
+            EngineReq::FdWrite(write) if write.fd() == 5 => Some(write),
+            _ => None,
+        })
+        .expect("accepted sock_send must enter typed fd_write stream");
+    assert_eq!(accepted_write.as_bytes(), b"ping");
     assert!(
         report
             .engine_trace
@@ -831,6 +850,58 @@ fn rust_built_std_sock_accept_app_mints_network_object_without_socket_authority(
             .iter()
             .any(|request| matches!(request, EngineReq::FdClose(_))),
         "accepted sock_shutdown must enter typed fd_close stream"
+    );
+    assert_host_full_runner_drives_projected_localside(&report);
+}
+
+#[test]
+#[cfg(feature = "profile-host-linux-wasip1-full")]
+#[ignore = "requires scripts/check_wasip1_guest_builds.sh to build wasm32-wasip1 artifacts first"]
+fn rust_built_std_stream_control_app_uses_network_object_without_socket_authority() {
+    let artifact = artifact("wasip1-std-stream-control");
+    let mut runner = CoreWasip1HostRunner::new(&artifact).expect("create host/full stream runner");
+    runner
+        .fs_mut()
+        .install_network_stream(b"network/stream/control")
+        .expect("install control NetworkStream");
+    runner.enqueue_network_rx(4, b"pong");
+
+    let report = runner
+        .run_until_exit(512)
+        .expect("run ordinary std stream app through host/full typed runner");
+    assert_eq!(report.exit_status, Some(0));
+    assert!(
+        bytes_contain(&report.stdout, b"hibana network stream control ping pong"),
+        "stream app must report success through stdout"
+    );
+    assert_eq!(report.choreofs_open_count, 1);
+    assert_eq!(runner.network_tx().len(), 1);
+    assert_eq!(runner.network_tx()[0].0, 4);
+    assert_eq!(runner.network_tx()[0].1, b"ping");
+    assert_eq!(report.network_send_count, 1);
+    assert_eq!(report.network_recv_count, 1);
+    let sent_write = report
+        .engine_trace
+        .iter()
+        .find_map(|request| match request {
+            EngineReq::FdWrite(write) if write.fd() == 4 => Some(write),
+            _ => None,
+        })
+        .expect("stream write_chunk must enter the typed fd_write syscall stream");
+    assert_eq!(sent_write.as_bytes(), b"ping");
+    assert!(
+        report
+            .engine_trace
+            .iter()
+            .any(|request| matches!(request, EngineReq::FdRead(read) if read.fd() == 4)),
+        "stream read_chunk must enter the typed fd_read syscall stream"
+    );
+    assert!(
+        report
+            .engine_trace
+            .iter()
+            .any(|request| matches!(request, EngineReq::FdClose(close) if close.fd() == 4)),
+        "stream shutdown must enter the typed fd_close syscall stream"
     );
     assert_host_full_runner_drives_projected_localside(&report);
 }
@@ -849,17 +920,67 @@ fn assert_host_full_runner_drives_projected_localside(report: &CoreWasip1HostRun
 }
 
 #[test]
+fn wasip1_network_smoke_sources_use_guest_facade_not_raw_sock_imports() {
+    let datagram =
+        include_str!("../apps/wasip1/wasip1-smoke-apps/src/bin/wasip1-std-sock-send-recv.rs");
+    let accept = include_str!(
+        "../apps/wasip1/wasip1-smoke-apps/src/bin/wasip1-std-sock-accept-send-recv.rs"
+    );
+    let bad_accept =
+        include_str!("../apps/wasip1/wasip1-smoke-apps/src/bin/wasip1-std-sock-accept-bad.rs");
+    let stream =
+        include_str!("../apps/wasip1/wasip1-smoke-apps/src/bin/wasip1-std-stream-control.rs");
+
+    assert!(
+        datagram.contains("hibana_wasi_guest::net::Datagram"),
+        "datagram smoke app must use the safe Datagram facade"
+    );
+    assert!(
+        accept.contains("hibana_wasi_guest::net::{Listener, Stream}")
+            || accept.contains("hibana_wasi_guest::net::{Stream, Listener}"),
+        "accept smoke app must use the safe Listener/Stream facade"
+    );
+    assert!(
+        bad_accept.contains("hibana_wasi_guest::net::Listener"),
+        "bad accept smoke app must use the safe Listener facade"
+    );
+    assert!(
+        stream.contains("hibana_wasi_guest::net::Stream"),
+        "stream smoke app must use the safe Stream facade"
+    );
+
+    for (name, source) in [
+        ("datagram", datagram),
+        ("accept", accept),
+        ("bad_accept", bad_accept),
+        ("stream", stream),
+    ] {
+        assert!(
+            !source.contains("unsafe extern \"C\""),
+            "{name} network smoke app must not declare raw WASI imports"
+        );
+        assert!(
+            !source.contains("wasi_sock_"),
+            "{name} network smoke app must not call raw sock_* imports"
+        );
+    }
+}
+
+#[test]
 #[cfg(feature = "profile-host-linux-wasip1-full")]
 #[ignore = "requires scripts/check_wasip1_guest_builds.sh to build wasm32-wasip1 artifacts first"]
 fn rust_built_bad_std_sock_accept_fails_closed_without_listener_route() {
     let artifact = artifact("wasip1-std-sock-accept-bad");
     let mut runner =
         CoreWasip1HostRunner::new(&artifact).expect("create host/full bad sock runner");
-    runner.cap_grant_listener(31).expect("grant listener fd");
+    runner
+        .fs_mut()
+        .install_network_listener(b"network/listener/control")
+        .expect("install control NetworkListener");
     runner.fail_closed_on_network_error(true);
 
     let error = runner
-        .run_until_exit(128)
+        .run_until_exit(256)
         .expect_err("sock_accept must fail closed without explicit accept route");
     assert!(
         matches!(error, CoreWasip1HostRunError::NetworkRejected(_)),

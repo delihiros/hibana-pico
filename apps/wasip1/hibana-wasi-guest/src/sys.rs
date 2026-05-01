@@ -62,6 +62,7 @@ unsafe extern "C" {
         ro_flags: *mut u32,
     ) -> u16;
     fn sock_shutdown(fd: u32, how: u32) -> u16;
+    fn sock_accept(fd: u32, flags: u32, accepted_fd: *mut u32) -> u16;
 }
 
 pub(crate) fn open_path(fd: u32, path: &[u8], rights_base: u64) -> Result<u32> {
@@ -101,13 +102,7 @@ pub(crate) fn write_once_exact(fd: u32, bytes: &[u8]) -> Result<()> {
 }
 
 pub(crate) fn sock_send_exact(fd: u32, bytes: &[u8]) -> Result<()> {
-    let iov = [Ciovec {
-        buf: bytes.as_ptr(),
-        buf_len: bytes.len(),
-    }];
-    let mut written = 0usize;
-    let errno = unsafe { sock_send(fd, iov.as_ptr(), iov.len(), 0, &mut written) };
-    errno_result(Syscall::SockSend, errno)?;
+    let written = sock_send_once(fd, bytes)?;
     if written != bytes.len() {
         return Err(Error::ShortWrite {
             expected: bytes.len(),
@@ -115,6 +110,23 @@ pub(crate) fn sock_send_exact(fd: u32, bytes: &[u8]) -> Result<()> {
         });
     }
     Ok(())
+}
+
+pub(crate) fn sock_send_once(fd: u32, bytes: &[u8]) -> Result<usize> {
+    let iov = [Ciovec {
+        buf: bytes.as_ptr(),
+        buf_len: bytes.len(),
+    }];
+    let mut written = 0usize;
+    let errno = unsafe { sock_send(fd, iov.as_ptr(), iov.len(), 0, &mut written) };
+    errno_result(Syscall::SockSend, errno)?;
+    if written > bytes.len() {
+        return Err(Error::UnexpectedSocketLength {
+            max: bytes.len(),
+            actual: written,
+        });
+    }
+    Ok(written)
 }
 
 pub(crate) fn sock_recv_checked(fd: u32, out: &mut [u8]) -> Result<usize> {
@@ -134,6 +146,13 @@ pub(crate) fn sock_recv_checked(fd: u32, out: &mut [u8]) -> Result<usize> {
 pub(crate) fn sock_shutdown_quiesce(fd: u32) -> Result<()> {
     let errno = unsafe { sock_shutdown(fd, SOCK_SHUTDOWN_BOTH) };
     errno_result(Syscall::SockShutdown, errno)
+}
+
+pub(crate) fn sock_accept_stream(fd: u32) -> Result<u32> {
+    let mut accepted_fd = 0u32;
+    let errno = unsafe { sock_accept(fd, 0, &mut accepted_fd) };
+    errno_result(Syscall::SockAccept, errno)?;
+    Ok(accepted_fd)
 }
 
 pub(crate) fn sleep_ms(ms: u32) -> Result<()> {

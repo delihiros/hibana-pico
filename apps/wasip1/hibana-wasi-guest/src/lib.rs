@@ -7,8 +7,8 @@
 
 pub mod baker;
 pub mod choreofs;
-pub mod net;
 mod error;
+pub mod net;
 mod sys;
 
 pub use error::{Error, Result, Syscall};

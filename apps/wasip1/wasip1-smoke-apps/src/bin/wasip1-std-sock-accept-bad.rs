@@ -1,11 +1,9 @@
-#[link(wasm_import_module = "wasi_snapshot_preview1")]
-unsafe extern "C" {
-    #[link_name = "sock_accept"]
-    fn wasi_sock_accept(fd: u32, flags: u32, accepted_fd: *mut u32) -> u16;
-}
+use hibana_wasi_guest::net::Listener;
 
-fn main() {
-    let mut accepted = 0u32;
-    let errno = unsafe { wasi_sock_accept(31, 0, &mut accepted) };
-    assert_eq!(errno, 0, "sock_accept must fail closed");
+const FAIL_MARKER: &str = "sock_accept must fail closed";
+
+fn main() -> hibana_wasi_guest::Result<()> {
+    let listener = Listener::control()?;
+    let _stream = listener.accept_stream().expect(FAIL_MARKER);
+    Ok(())
 }

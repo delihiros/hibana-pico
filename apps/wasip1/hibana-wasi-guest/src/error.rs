@@ -20,4 +20,5 @@ pub enum Syscall {
     SockSend,
     SockRecv,
     SockShutdown,
+    SockAccept,
 }
