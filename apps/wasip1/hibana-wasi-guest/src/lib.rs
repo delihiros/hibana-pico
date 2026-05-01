@@ -7,6 +7,7 @@
 
 pub mod baker;
 pub mod choreofs;
+pub mod net;
 mod error;
 mod sys;
 

@@ -1,7 +1,7 @@
 use crate::{
     choreography::protocol::{
         BudgetExpired, BudgetRun, EngineReq, EngineRet, FdRead, FdRequest, FdWrite, GpioSet,
-        TimerSleepUntil,
+        TimerSleepUntil, WASIP1_STREAM_CHUNK_CAPACITY,
     },
     kernel::features::{WASIP1_PREVIEW1_MODULE, Wasip1HandlerSet, Wasip1ImportName, Wasip1Syscall},
 };
@@ -1374,7 +1374,7 @@ struct ParsedTinyWasip1Module<'a> {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TinyWasip1Payload {
-    bytes: [u8; 8],
+    bytes: [u8; WASIP1_STREAM_CHUNK_CAPACITY],
     len: u8,
 }
 
@@ -4528,11 +4528,12 @@ impl<'a> CoreWasip1Instance<'a> {
             }
             CoreWasip1SocketKind::SockRecv => {
                 let (_, max_len) = self.sock_recv_iovec(call)?;
-                if max_len > u8::MAX as u32 {
+                let request_len = max_len.min(WASIP1_STREAM_CHUNK_CAPACITY as u32);
+                if request_len > u8::MAX as u32 {
                     return Err(WasmError::Invalid("sock_recv length does not fit fd_read"));
                 }
                 Ok(EngineReq::FdRead(
-                    FdRead::new_with_lease(call.fd()?, lease_id, max_len as u8)
+                    FdRead::new_with_lease(call.fd()?, lease_id, request_len as u8)
                         .map_err(|_| WasmError::Invalid("sock_recv length does not fit fd_read"))?,
                 ))
             }
@@ -4646,10 +4647,10 @@ impl<'a> CoreWasip1Instance<'a> {
         call: TinyWasip1FdWriteCall,
     ) -> Result<TinyWasip1Payload, WasmError> {
         let payload_len = self.fd_write_total_len(call)?;
-        if payload_len > 8 {
+        if payload_len as usize > WASIP1_STREAM_CHUNK_CAPACITY {
             return Err(WasmError::Unsupported("tiny fd_write payload too large"));
         }
-        let mut bytes = [0u8; 8];
+        let mut bytes = [0u8; WASIP1_STREAM_CHUNK_CAPACITY];
         if call.iovs_len == 0 {
             self.core
                 .read_memory(call.iovs, &mut bytes[..payload_len as usize])?;
@@ -5691,7 +5692,7 @@ impl<'a> TinyWasip1TrafficLightInstance<'a> {
         } else {
             return Err(WasmError::Unsupported("only one iovec is supported"));
         };
-        if payload_len > 8 {
+        if payload_len > WASIP1_STREAM_CHUNK_CAPACITY {
             return Err(WasmError::Unsupported("tiny fd_write payload too large"));
         }
         let Ok(payload_offset) = self.translate_addr(payload_ptr as u32) else {
@@ -5703,7 +5704,7 @@ impl<'a> TinyWasip1TrafficLightInstance<'a> {
         else {
             return Err(WasmError::Truncated);
         };
-        let mut bytes = [0u8; 8];
+        let mut bytes = [0u8; WASIP1_STREAM_CHUNK_CAPACITY];
         bytes[..payload_len].copy_from_slice(payload);
         Ok(TinyWasip1Payload {
             bytes,

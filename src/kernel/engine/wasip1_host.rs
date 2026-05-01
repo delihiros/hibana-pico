@@ -705,7 +705,8 @@ impl<'a> CoreWasip1HostRunner<'a> {
                 }
                 let request = self.guest.socket_as_engine_req(call, 1)?;
                 let (_, max_len) = self.guest.sock_recv_iovec(call)?;
-                let bytes = self.dequeue_network_rx(fd, max_len as usize);
+                let bytes = self
+                    .dequeue_network_rx(fd, (max_len as usize).min(WASIP1_STREAM_CHUNK_CAPACITY));
                 report.network_recv_count = report.network_recv_count.saturating_add(1);
                 let reply = EngineRet::FdReadDone(
                     FdReadDone::new_with_lease(fd, 1, &bytes)

@@ -6,10 +6,23 @@ const EVENT_ERROR_OFFSET: usize = 8;
 const EVENT_TYPE_OFFSET: usize = 10;
 const SUBSCRIPTION_EVENTTYPE_OFFSET: usize = 8;
 const SUBSCRIPTION_CLOCK_TIMEOUT_OFFSET: usize = 24;
+const SOCKET_RECV_EXPECTED_FLAGS: u32 = 0;
+const SOCK_SHUTDOWN_RD: u32 = 1 << 0;
+const SOCK_SHUTDOWN_WR: u32 = 1 << 1;
+const SOCK_SHUTDOWN_BOTH: u32 = SOCK_SHUTDOWN_RD | SOCK_SHUTDOWN_WR;
+
+pub(crate) const FD_READ_RIGHT: u64 = 1 << 1;
+pub(crate) const FD_WRITE_RIGHT: u64 = 1 << 6;
 
 #[repr(C)]
 struct Ciovec {
     buf: *const u8,
+    buf_len: usize,
+}
+
+#[repr(C)]
+struct Iovec {
+    buf: *mut u8,
     buf_len: usize,
 }
 
@@ -33,6 +46,22 @@ unsafe extern "C" {
         nsubscriptions: usize,
         nevents: *mut usize,
     ) -> u16;
+    fn sock_send(
+        fd: u32,
+        si_data: *const Ciovec,
+        si_data_len: usize,
+        si_flags: u32,
+        nwritten: *mut usize,
+    ) -> u16;
+    fn sock_recv(
+        fd: u32,
+        ri_data: *mut Iovec,
+        ri_data_len: usize,
+        ri_flags: u32,
+        nread: *mut usize,
+        ro_flags: *mut u32,
+    ) -> u16;
+    fn sock_shutdown(fd: u32, how: u32) -> u16;
 }
 
 pub(crate) fn open_path(fd: u32, path: &[u8], rights_base: u64) -> Result<u32> {
@@ -71,6 +100,42 @@ pub(crate) fn write_once_exact(fd: u32, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
+pub(crate) fn sock_send_exact(fd: u32, bytes: &[u8]) -> Result<()> {
+    let iov = [Ciovec {
+        buf: bytes.as_ptr(),
+        buf_len: bytes.len(),
+    }];
+    let mut written = 0usize;
+    let errno = unsafe { sock_send(fd, iov.as_ptr(), iov.len(), 0, &mut written) };
+    errno_result(Syscall::SockSend, errno)?;
+    if written != bytes.len() {
+        return Err(Error::ShortWrite {
+            expected: bytes.len(),
+            actual: written,
+        });
+    }
+    Ok(())
+}
+
+pub(crate) fn sock_recv_checked(fd: u32, out: &mut [u8]) -> Result<usize> {
+    let mut iov = Iovec {
+        buf: out.as_mut_ptr(),
+        buf_len: out.len(),
+    };
+    let mut read = 0usize;
+    let mut flags = 0u32;
+    let errno = unsafe { sock_recv(fd, &mut iov, 1, 0, &mut read, &mut flags) };
+    errno_result(Syscall::SockRecv, errno)?;
+    sock_recv_len_result(read, out.len())?;
+    sock_recv_flags_result(flags)?;
+    Ok(read)
+}
+
+pub(crate) fn sock_shutdown_quiesce(fd: u32) -> Result<()> {
+    let errno = unsafe { sock_shutdown(fd, SOCK_SHUTDOWN_BOTH) };
+    errno_result(Syscall::SockShutdown, errno)
+}
+
 pub(crate) fn sleep_ms(ms: u32) -> Result<()> {
     let mut subscription = [0u8; 48];
     let mut event = [0u8; 32];
@@ -85,6 +150,22 @@ pub(crate) fn sleep_ms(ms: u32) -> Result<()> {
     poll_oneoff_event_result(&event, ready)?;
     core::hint::black_box(event);
     Ok(())
+}
+
+fn sock_recv_flags_result(flags: u32) -> Result<()> {
+    if flags == SOCKET_RECV_EXPECTED_FLAGS {
+        Ok(())
+    } else {
+        Err(Error::UnexpectedSocketFlags { flags })
+    }
+}
+
+fn sock_recv_len_result(actual: usize, max: usize) -> Result<()> {
+    if actual <= max {
+        Ok(())
+    } else {
+        Err(Error::UnexpectedSocketLength { max, actual })
+    }
 }
 
 fn poll_oneoff_event_result(event: &[u8; 32], ready: usize) -> Result<()> {
@@ -142,5 +223,28 @@ mod tests {
             poll_oneoff_event_result(&event, 1),
             Err(Error::UnexpectedEvent { event_type: 1 })
         );
+    }
+
+    #[test]
+    fn sock_recv_flags_result_rejects_unexpected_flags() {
+        assert_eq!(sock_recv_flags_result(0), Ok(()));
+        assert_eq!(
+            sock_recv_flags_result(2),
+            Err(Error::UnexpectedSocketFlags { flags: 2 })
+        );
+    }
+
+    #[test]
+    fn sock_recv_len_result_rejects_lengths_beyond_buffer() {
+        assert_eq!(sock_recv_len_result(4, 4), Ok(()));
+        assert_eq!(
+            sock_recv_len_result(5, 4),
+            Err(Error::UnexpectedSocketLength { max: 4, actual: 5 })
+        );
+    }
+
+    #[test]
+    fn sock_shutdown_uses_read_write_sdflags() {
+        assert_eq!(SOCK_SHUTDOWN_BOTH, 3);
     }
 }
